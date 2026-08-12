@@ -1,0 +1,6 @@
+@FileSentry.Api_HostAddress = http://localhost:5029
+
+GET {{FileSentry.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
