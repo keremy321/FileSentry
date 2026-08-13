@@ -1,1 +1,7 @@
-<Solution />
+<Solution>
+  <Folder Name="/tests/">
+    <Project Path="tests/FileSentry.IntegrationTests/FileSentry.IntegrationTests.csproj" />
+    <Project Path="tests/FileSentry.UnitTests/FileSentry.UnitTests.csproj" />
+  </Folder>
+  <Project Path="src/FileSentry.Api/FileSentry.Api.csproj" />
+</Solution>
