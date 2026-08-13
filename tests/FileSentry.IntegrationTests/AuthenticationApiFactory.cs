@@ -24,6 +24,9 @@ public sealed class AuthenticationApiFactory : WebApplicationFactory<Program>, I
         .Build();
     private readonly TcpListener _clamAvListener = new(IPAddress.Loopback, 0);
     private readonly CancellationTokenSource _clamAvCancellationSource = new();
+    private readonly string _storageRootPath = Path.Combine(
+        Path.GetTempPath(),
+        $"filesentry-integration-{Guid.NewGuid():N}");
     private Task? _clamAvServerTask;
 
     public AuthenticationApiFactory()
@@ -36,6 +39,12 @@ public sealed class AuthenticationApiFactory : WebApplicationFactory<Program>, I
     public string Audience { get; } = "FileSentry.IntegrationTests.Client";
 
     public string SigningKey { get; }
+
+    public string StorageRootPath => _storageRootPath;
+
+    public string TempRootPath => Path.Combine(_storageRootPath, "temp");
+
+    public string QuarantineRootPath => Path.Combine(_storageRootPath, "quarantine");
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -52,7 +61,8 @@ public sealed class AuthenticationApiFactory : WebApplicationFactory<Program>, I
                 ["Jwt:SigningKey"] = SigningKey,
                 ["Jwt:AccessTokenLifetimeMinutes"] = "15",
                 ["AuthenticationRateLimit:PermitLimit"] = "1000",
-                ["AuthenticationRateLimit:WindowSeconds"] = "60"
+                ["AuthenticationRateLimit:WindowSeconds"] = "60",
+                ["Storage:RootPath"] = _storageRootPath
             });
         });
     }
@@ -86,6 +96,11 @@ public sealed class AuthenticationApiFactory : WebApplicationFactory<Program>, I
 
         _clamAvCancellationSource.Dispose();
         await _postgreSqlContainer.DisposeAsync();
+
+        if (Directory.Exists(_storageRootPath))
+        {
+            Directory.Delete(_storageRootPath, recursive: true);
+        }
     }
 
     private int GetClamAvPort()
