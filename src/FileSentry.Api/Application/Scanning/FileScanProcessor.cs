@@ -34,7 +34,7 @@ public sealed class FileScanProcessor(
                 {
                     Mode = FileMode.Open,
                     Access = FileAccess.Read,
-                    Share = FileShare.Read,
+                    Share = FileShare.Read | FileShare.Delete,
                     BufferSize = clamAvOptions.Value.StreamChunkSizeBytes,
                     Options = FileOptions.Asynchronous | FileOptions.SequentialScan
                 });

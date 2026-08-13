@@ -49,6 +49,7 @@ public sealed class FileIngestionService(
 
             SupportedFileFormat detectedFormat = validation.DetectedFormat!.Value;
             Guid fileId = Guid.NewGuid();
+            DateTimeOffset now = timeProvider.GetUtcNow();
             string storageName = storagePaths.CreateStorageName(fileId);
             quarantinePath = storagePaths.GetQuarantinePath(storageName);
             var record = new FileRecord
@@ -63,7 +64,8 @@ public sealed class FileIngestionService(
                 DetectedMediaType = GetMediaType(detectedFormat),
                 ClientMediaType = uploadedFile.ClientMediaType,
                 Status = FileRecordStatus.PendingScan,
-                CreatedAtUtc = timeProvider.GetUtcNow()
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now
             };
 
             await using IDbContextTransaction transaction =

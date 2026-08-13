@@ -60,6 +60,7 @@ public sealed class FileScanWorkflowService(
         record.ScanCompletedAtUtc = null;
         record.DetectionName = null;
         record.LastScanFailureCode = null;
+        record.UpdatedAtUtc = now;
 
         dbContext.ScanAttempts.Add(new ScanAttempt
         {
@@ -123,6 +124,7 @@ public sealed class FileScanWorkflowService(
             attempt.DetectionName = BoundMetadata(result.DetectionName);
             attempt.ScannerVersion = BoundMetadata(result.ScannerVersion);
             record.LastScannerVersion = attempt.ScannerVersion;
+            record.UpdatedAtUtc = timeProvider.GetUtcNow();
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
@@ -295,6 +297,7 @@ public sealed class FileScanWorkflowService(
             record.Status = FileRecordStatus.Clean;
             record.StorageState = FileStorageState.Clean;
             record.ScanCompletedAtUtc = now;
+            record.UpdatedAtUtc = now;
             record.DetectionName = null;
             record.LastScanFailureCode = null;
             ClearActiveClaim(record);
@@ -325,6 +328,7 @@ public sealed class FileScanWorkflowService(
             ? FileStorageState.Deleted
             : FileStorageState.Quarantine;
         record.ScanCompletedAtUtc = now;
+        record.UpdatedAtUtc = now;
         record.DetectionName = attempt.DetectionName;
         record.LastScanFailureCode = deletionSucceeded
             ? null
@@ -368,6 +372,7 @@ public sealed class FileScanWorkflowService(
             {
                 record.StorageState = FileStorageState.Deleted;
                 record.LastScanFailureCode = null;
+                record.UpdatedAtUtc = timeProvider.GetUtcNow();
                 await dbContext.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(CancellationToken.None);
                 cleaned++;
@@ -389,7 +394,8 @@ public sealed class FileScanWorkflowService(
                 && record.ScanAttemptCount < maximumAttempts)
             .ExecuteUpdateAsync(setters => setters
                 .SetProperty(record => record.Status, FileRecordStatus.PendingScan)
-                .SetProperty(record => record.NextScanAttemptAtUtc, (DateTimeOffset?)null),
+                .SetProperty(record => record.NextScanAttemptAtUtc, (DateTimeOffset?)null)
+                .SetProperty(record => record.UpdatedAtUtc, now),
                 cancellationToken);
     }
 
@@ -400,6 +406,7 @@ public sealed class FileScanWorkflowService(
     {
         record.Status = FileRecordStatus.ScanFailed;
         record.ScanCompletedAtUtc = now;
+        record.UpdatedAtUtc = now;
         record.DetectionName = null;
         record.LastScanFailureCode = attempt.FailureCode ?? ScanFailureCode.Unknown;
         record.NextScanAttemptAtUtc = attempt.IsRetryable

@@ -1,89 +1,72 @@
-# Current Task: Durable ClamAV Scanner Worker
+# Current Task: Owner-Protected File Access APIs
 
 ## Objective
 
-Implement durable asynchronous malware scanning for quarantined `PendingScan`
-files. PostgreSQL remains authoritative for claims, attempts, retries, recovery,
-and final file state; filesystem changes must follow persisted scan evidence and
-never make an inconclusive result downloadable.
+Implement authenticated, owner-scoped list, metadata, clean download, and delete
+endpoints for existing file records. Ownership must be part of each database query,
+and requests for another user's file must be indistinguishable from missing records.
 
-The completed infrastructure, authentication, health, and secure-ingestion
-behavior must remain intact.
+The completed authentication, ingestion, health, and durable scanner behavior must
+remain intact.
 
-## In Scope
+## Endpoints
 
-- ClamAV `INSTREAM` over TCP without sending server filesystem paths;
-- bounded streaming from quarantine without full-file buffering;
-- strict clean, infected, error, timeout, and malformed-response classification;
-- safe scanner/version and threat-name metadata where available;
-- `ScanAttempt` persistence and an EF Core migration;
-- durable PostgreSQL claiming with row locking and `SKIP LOCKED`;
-- a hosted background scanner in the existing application;
-- `PendingScan -> Scanning -> Clean|Infected|ScanFailed` transitions;
-- retryable `ScanFailed -> PendingScan` transitions with bounded exponential backoff;
-- recovery of stale `Scanning` claims after termination;
-- clean-file promotion from quarantine to the trusted clean root;
-- prompt, retryable cleanup of infected bytes while retaining database metadata;
-- fail-closed handling for missing files, storage failures, cancellation, and
-  unknown scanner behavior;
-- unit, PostgreSQL-backed integration, and real-ClamAV clean/EICAR verification.
+- `GET /api/v1/files` returns only caller-owned safe metadata in deterministic
+  newest-first order.
+- `GET /api/v1/files/{fileId}` returns safe metadata for a caller-owned record.
+- `GET /api/v1/files/{fileId}/download` streams only caller-owned `Clean` content
+  from the trusted clean root, with the verified media type, a safe filename, and
+  `X-Content-Type-Options: nosniff`.
+- `DELETE /api/v1/files/{fileId}` removes stored bytes and transitions a
+  caller-owned record to `Deleted` without allowing scanner completion to revive it.
 
-## Configuration
+All endpoints require JWT authentication.
 
-`ClamAV` supplies the daemon host/port, health timeout, scan timeout, maximum
-stream size, and bounded stream chunk size.
+## Security and Concurrency
 
-`ScannerWorker` supplies startup-validated values for:
+- Every single-record lookup includes both authenticated owner ID and file ID.
+- Cross-owner and nonexistent records both return `404 Not Found`.
+- Internal storage names, paths, scan attempts, and Identity internals are never
+  returned in user DTOs.
+- `PendingScan`, `Scanning`, `Infected`, `ScanFailed`, and `Deleted` records are not
+  downloadable and return a stable `FILE_NOT_CLEAN` problem where applicable.
+- Downloads use only the generated storage name under the trusted clean root and
+  stream through the framework without whole-file buffering.
+- Database row locking and guarded scanner transitions prevent `Deleted -> Clean`
+  and promotion after deletion.
+- Deletion is idempotent at the storage boundary and fails safely when bytes cannot
+  be removed; no alternate storage path is exposed.
 
-- enabled state;
-- maximum attempts;
-- initial and maximum retry delay;
-- stale-claim timeout;
-- polling interval.
+## Tests
 
-Retry and stale-claim values must remain bounded, and the stale timeout must be
-longer than the configured scan timeout.
-
-## Durable Workflow
-
-- A claim transaction locks one due `PendingScan` row with `FOR UPDATE SKIP LOCKED`,
-  marks it `Scanning`, and creates an in-progress `ScanAttempt` before network I/O.
-- Completed scanner evidence is persisted before filesystem finalization so a
-  restart can safely finish clean promotion or infected deletion.
-- Exact `stream: OK` is the only clean classification.
-- `FOUND` is infected and is never retried as a scan failure.
-- Connection errors, timeouts, scanner errors, malformed/unknown responses, and
-  scanner size failures are `ScanFailed`; retryable failures use bounded backoff.
-- Host cancellation leaves the durable claim for stale recovery rather than
-  falsely completing an attempt.
-- Exhausted or non-retryable failures remain `ScanFailed` with quarantined bytes.
-- Clean state requires a completed clean result and content in the clean root.
-- Infected state is non-downloadable; deletion failures retain an infected state
-  and are retried as byte cleanup, not as malware scans.
+Cover authentication, owner-only listing and metadata, not-found equivalence,
+clean downloads, every non-clean state, safe content disposition, `nosniff`, pending
+and clean deletion, byte removal, cross-owner deletion, post-delete access, and
+scanner/delete concurrency. Existing auth, ingestion, scanning, and health behavior
+must remain green.
 
 ## Out of Scope
 
-- file list, metadata, download, or delete endpoints;
-- ownership authorization for file reads or mutations;
-- `AuditEvent`, administration, frontend, cloud storage, or a message broker;
-- any distributed worker system or deployment change.
+- `AuditEvent`, admin APIs, public sharing, or signed URLs;
+- retention cleanup, frontend, cloud storage, or a message broker;
+- distributed or multi-worker deployment work.
 
 ## Verification
 
-Run restore, Release build/tests, EF migration listing/update, formatting, diff
-checks, and the NuGet vulnerability audit. Verify PostgreSQL and ClamAV container
-health, real clean and assembled-EICAR scans, fail-closed ClamAV outage behavior,
-retry exhaustion, stale recovery, durable attempts, clean promotion, and infected
-byte deletion.
+Run restore, Release build/tests, formatting and diff checks, the NuGet
+vulnerability audit, container health checks, and manual/integration exercises for
+list, metadata, download, and delete. Do not create an EF migration unless the
+existing schema cannot support the milestone.
 
 Do not create a commit or push.
 
 ## Verified Completion
 
-Implemented and verified on 2026-08-13. Release restore/build/tests, the EF
-migration list and database update, formatting, diff checks, dependency audit,
-healthy PostgreSQL/ClamAV containers, real clean/EICAR scanning, outage failure,
-retry exhaustion, stale recovery, file promotion, and infected-byte deletion all
-completed successfully.
+Implemented and verified on 2026-08-13. Owner-scoped list, metadata, clean download,
+and delete behavior passed PostgreSQL-backed HTTP integration tests, including
+not-found equivalence, hostile download filenames, missing clean content, all
+non-clean states, stored-byte removal, and guarded scanner completion after delete.
+Release restore/build/tests, migration application, formatting, diff checks,
+dependency audit, and local PostgreSQL/ClamAV health checks completed successfully.
 
-Recommended next milestone: `feat/file-authorization-endpoints`.
+Recommended next milestone: `feat/audit-rate-limit-hardening`.

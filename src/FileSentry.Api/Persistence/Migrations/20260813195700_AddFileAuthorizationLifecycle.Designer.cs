@@ -3,6 +3,7 @@ using System;
 using FileSentry.Api.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace FileSentry.Api.Persistence.Migrations
 {
     [DbContext(typeof(FileSentryDbContext))]
-    partial class FileSentryDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260813195700_AddFileAuthorizationLifecycle")]
+    partial class AddFileAuthorizationLifecycle
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
