@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_NOLOGO: true
+  NUGET_XMLDOC_MODE: skip
+
+jobs:
+  verify:
+    name: Build and test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v6.0.0
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Show .NET information
+        run: dotnet --info
+
+      - name: Restore dependencies
+        run: dotnet restore FileSentry.slnx
+
+      - name: Validate Docker Compose configuration
+        env:
+          POSTGRES_DB: filesentry_ci
+          POSTGRES_USER: filesentry_ci
+          POSTGRES_PASSWORD: ci-only-placeholder-not-a-secret
+          POSTGRES_PORT: 5432
+          CLAMAV_PORT: 3310
+        run: docker compose -f deploy/docker-compose.yml config --quiet
+
+      - name: Prepare integration test images
+        run: |
+          docker pull postgres:17
+          docker pull clamav/clamav:1.4_base
+
+      - name: Build solution
+        run: dotnet build FileSentry.slnx --configuration Release --no-restore
+
+      - name: Run automated tests
+        run: dotnet test FileSentry.slnx --configuration Release --no-build --no-restore
+
+      - name: Verify formatting
+        run: dotnet format FileSentry.slnx --verify-no-changes --no-restore
+
+      - name: Audit NuGet packages
+        run: dotnet package list --project FileSentry.slnx --vulnerable --include-transitive
