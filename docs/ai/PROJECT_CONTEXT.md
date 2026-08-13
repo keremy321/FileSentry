@@ -24,7 +24,7 @@ The primary design rule is:
 | Background processing | ASP.NET Core `BackgroundService` with durable database state |
 | Testing | xUnit, WebApplicationFactory, and Testcontainers |
 | Local infrastructure | Docker Compose |
-| CI | GitHub Actions |
+| CI | GitHub Actions (planned) |
 
 ## Solution Layout
 
@@ -56,7 +56,9 @@ supports durable logical deletion with stored-byte removal.
 
 ### PostgreSQL
 
-PostgreSQL will store users, file records, scan attempts, audit events, workflow locks, retry data, and current file state. Database state—not directory contents—is authoritative.
+PostgreSQL stores users, file records, scan attempts, security audit events,
+workflow locks, retry data, and current file state. Database state—not directory
+contents—is authoritative.
 
 ### Scanner Worker
 
@@ -124,6 +126,10 @@ GET    /health/ready
 All listed health, authentication, ingestion, owner-scoped metadata, download, and
 delete endpoints are implemented.
 
+Requests receive a validated or generated `X-Correlation-ID`. Authentication and
+upload endpoints use separate startup-validated fixed-window rate-limit policies;
+uploads are partitioned by authenticated user ID.
+
 ## Security Boundaries
 
 1. Client to API: all request data is untrusted.
@@ -142,12 +148,13 @@ and updated timestamps, retry timing, and scanner result metadata. `ScanAttempt`
 durably records each claim, outcome, failure classification, threat name, and
 scanner version when available.
 
-Do not implement the remaining entities before their dedicated task:
-
-- `AuditEvent`
+`AuditEvent` durably records controlled security events with actor/file identifiers,
+correlation, UTC time, bounded workflow states, failure classification, and scan
+duration. Its schema deliberately has no arbitrary metadata or content field.
 
 The current migrations are `InitialIdentity`, `AddSecureFileIngestion`,
-`AddDurableClamAvScanning`, and `AddFileAuthorizationLifecycle`.
+`AddDurableClamAvScanning`, `AddFileAuthorizationLifecycle`, and
+`AddSecurityAuditEvents`.
 
 ## Current State
 
@@ -170,9 +177,15 @@ behave like missing records. Downloads use only trusted clean storage and safe
 response metadata. Deletion is coordinated with scanner row locking, removes stored
 bytes, and prevents a completed scan from reviving a deleted record.
 
-Audit events and additional rate-limit/security hardening remain unimplemented. The
-completed access milestone and recommended next milestone are recorded in
-`CURRENT_TASK.md`.
+Security auditing is implemented for accepted uploads, scan start/outcomes,
+downloads, and deletions. Audit writes fail closed and participate in the associated
+database unit of work where feasible. Structured workflow logs use controlled IDs,
+states, durations, and failure codes without filenames or content. Storage remains
+outside static web content, and the host-development ClamAV mapping remains
+loopback-only.
+
+CI remains unimplemented. The completed hardening milestone and recommended next
+milestone are recorded in `CURRENT_TASK.md`.
 
 ## Explicit Non-Goals for the Initial Release
 

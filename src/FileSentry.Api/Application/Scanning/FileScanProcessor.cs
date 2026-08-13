@@ -24,6 +24,13 @@ public sealed class FileScanProcessor(
             return false;
         }
 
+        using IDisposable? logScope = logger.BeginScope(new Dictionary<string, object?>
+        {
+            ["FileRecordId"] = job.FileRecordId,
+            ["CorrelationId"] = job.CorrelationId,
+            ["ScanAttemptNumber"] = job.AttemptNumber
+        });
+
         ClamAvScanResult result;
         try
         {

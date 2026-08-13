@@ -1,72 +1,84 @@
-# Current Task: Owner-Protected File Access APIs
+# Current Task: Audit, Correlation, and Rate-Limit Hardening
 
 ## Objective
 
-Implement authenticated, owner-scoped list, metadata, clean download, and delete
-endpoints for existing file records. Ownership must be part of each database query,
-and requests for another user's file must be indistinguishable from missing records.
+Add durable security auditing, request/worker correlation, focused upload rate
+limiting, and small operational security improvements without changing the core
+file workflow.
 
-The completed authentication, ingestion, health, and durable scanner behavior must
-remain intact.
+The completed authentication, ingestion, scanner, file authorization, and health
+behavior must remain intact.
 
-## Endpoints
+## Audit Scope
 
-- `GET /api/v1/files` returns only caller-owned safe metadata in deterministic
-  newest-first order.
-- `GET /api/v1/files/{fileId}` returns safe metadata for a caller-owned record.
-- `GET /api/v1/files/{fileId}/download` streams only caller-owned `Clean` content
-  from the trusted clean root, with the verified media type, a safe filename, and
-  `X-Content-Type-Options: nosniff`.
-- `DELETE /api/v1/files/{fileId}` removes stored bytes and transitions a
-  caller-owned record to `Deleted` without allowing scanner completion to revive it.
+Persist safe `AuditEvent` records for:
 
-All endpoints require JWT authentication.
+- upload accepted;
+- scan started, clean, malware detected, and failed;
+- file downloaded;
+- file deleted.
 
-## Security and Concurrency
+Audit fields are limited to event ID, actor/file identifiers where applicable,
+event type, UTC timestamp, correlation ID, controlled workflow states, a bounded
+failure classification, and scan duration. Audit storage must never accept file
+content, credentials, tokens, secrets, arbitrary client objects, or raw malware.
 
-- Every single-record lookup includes both authenticated owner ID and file ID.
-- Cross-owner and nonexistent records both return `404 Not Found`.
-- Internal storage names, paths, scan attempts, and Identity internals are never
-  returned in user DTOs.
-- `PendingScan`, `Scanning`, `Infected`, `ScanFailed`, and `Deleted` records are not
-  downloadable and return a stable `FILE_NOT_CLEAN` problem where applicable.
-- Downloads use only the generated storage name under the trusted clean root and
-  stream through the framework without whole-file buffering.
-- Database row locking and guarded scanner transitions prevent `Deleted -> Clean`
-  and promotion after deletion.
-- Deletion is idempotent at the storage boundary and fails safely when bytes cannot
-  be removed; no alternate storage path is exposed.
+Audit writes participate in the same PostgreSQL unit of work as the associated
+state change where feasible. A download is not returned unless its audit write
+succeeds. Failures propagate and fail safely rather than silently dropping the
+audit event.
 
-## Tests
+## Correlation and Logging
 
-Cover authentication, owner-only listing and metadata, not-found equivalence,
-clean downloads, every non-clean state, safe content disposition, `nosniff`, pending
-and clean deletion, byte removal, cross-owner deletion, post-delete access, and
-scanner/delete concurrency. Existing auth, ingestion, scanning, and health behavior
-must remain green.
+- Accept one syntactically safe `X-Correlation-ID` or generate a new identifier.
+- Return the effective correlation ID and use it as the request trace identifier.
+- Persist the ingestion correlation ID on the file record so worker scan events
+  and structured logs retain durable correlation after restarts.
+- Log only structured file IDs, correlation IDs, state transitions, bounded scan
+  duration, and controlled failure codes; never log filenames, content, tokens,
+  passwords, keys, database secrets, or malware bytes.
+
+## Upload Rate Limit
+
+Apply a startup-validated built-in fixed-window policy to authenticated
+`POST /api/v1/files` requests. Partition authenticated uploads by user ID, keep the
+existing IP-partitioned authentication limiter unchanged, and return stable
+`ProblemDetails` code `UPLOAD_RATE_LIMITED` for rejected uploads.
+
+## Operational Boundaries
+
+- Storage remains outside the web root and is not static content.
+- Trusted storage roots and all security-critical options fail validation clearly.
+- ClamAV remains loopback-bound in the host development deployment.
+- Do not add distributed rate limiting, Redis, OpenTelemetry, or unrelated
+  refactoring.
+
+## Tests and Verification
+
+Cover audit fields and safe schema, all required event types, request-to-worker
+correlation, normal and excessive upload traffic, authentication precedence, and
+continued authentication rate limiting. Run restore, Release build/tests, EF
+migration list/update, formatting, diff checks, dependency audit, container health,
+and inspect logs/audit rows for sensitive data.
 
 ## Out of Scope
 
-- `AuditEvent`, admin APIs, public sharing, or signed URLs;
-- retention cleanup, frontend, cloud storage, or a message broker;
-- distributed or multi-worker deployment work.
-
-## Verification
-
-Run restore, Release build/tests, formatting and diff checks, the NuGet
-vulnerability audit, container health checks, and manual/integration exercises for
-list, metadata, download, and delete. Do not create an EF migration unless the
-existing schema cannot support the milestone.
+- CI or GitHub Actions;
+- admin audit APIs or UI;
+- public sharing, signed URLs, retention cleanup, dashboards, or OpenTelemetry;
+- cloud storage, message brokers, or frontend work.
 
 Do not create a commit or push.
 
 ## Verified Completion
 
-Implemented and verified on 2026-08-13. Owner-scoped list, metadata, clean download,
-and delete behavior passed PostgreSQL-backed HTTP integration tests, including
-not-found equivalence, hostile download filenames, missing clean content, all
-non-clean states, stored-byte removal, and guarded scanner completion after delete.
-Release restore/build/tests, migration application, formatting, diff checks,
-dependency audit, and local PostgreSQL/ClamAV health checks completed successfully.
+Implemented and verified on 2026-08-14. Durable controlled-field audit events,
+request and worker correlation, structured workflow logging, and authenticated
+per-user upload rate limiting passed the PostgreSQL-backed integration suite. The
+existing authentication limiter, ingestion, real ClamAV scanning, authorization,
+downloads, deletes, and health behavior remain green.
 
-Recommended next milestone: `feat/audit-rate-limit-hardening`.
+Release restore/build/tests, migration list/application, formatting, diff checks,
+NuGet audit, and local PostgreSQL/ClamAV health checks completed successfully.
+
+Recommended next milestone: `feat/ci-pipeline`.

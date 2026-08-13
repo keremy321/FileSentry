@@ -5,4 +5,5 @@ public sealed record FileScanJob(
     Guid ScanAttemptId,
     int AttemptNumber,
     string StorageName,
-    long ExpectedSizeBytes);
+    long ExpectedSizeBytes,
+    string CorrelationId);

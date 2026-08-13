@@ -1,7 +1,9 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
+using FileSentry.Api.Application.Auditing;
 using FileSentry.Api.Application.Scanning;
+using FileSentry.Api.Domain.Auditing;
 using FileSentry.Api.Domain.Files;
 using FileSentry.Api.Domain.Scanning;
 using FileSentry.Api.Infrastructure.Options;
@@ -43,6 +45,16 @@ public sealed class ScannerWorkflowTests(AuthenticationApiFactory factory)
         Assert.Single(attempts);
         Assert.Equal(ScanAttemptResult.Clean, attempts[0].Result);
         Assert.Equal("ClamAV test-version", attempts[0].ScannerVersion);
+        List<AuditEvent> auditEvents = await LoadAuditEventsAsync(fileRecordId);
+        Assert.Equal(
+            [AuditEventType.ScanStarted, AuditEventType.ScanClean],
+            auditEvents.Select(auditEvent => auditEvent.EventType));
+        Assert.All(auditEvents, auditEvent =>
+        {
+            Assert.Null(auditEvent.ActorUserId);
+            Assert.Equal(record.CorrelationId, auditEvent.CorrelationId);
+        });
+        Assert.NotNull(auditEvents[1].DurationMilliseconds);
         Assert.False(File.Exists(Path.Combine(factory.QuarantineRootPath, record.StorageName)));
         Assert.Equal(
             content,
@@ -70,6 +82,10 @@ public sealed class ScannerWorkflowTests(AuthenticationApiFactory factory)
         Assert.Single(attempts);
         Assert.Equal(ScanAttemptResult.Infected, attempts[0].Result);
         Assert.False(attempts[0].IsRetryable);
+        List<AuditEvent> auditEvents = await LoadAuditEventsAsync(fileRecordId);
+        Assert.Equal(
+            [AuditEventType.ScanStarted, AuditEventType.MalwareDetected],
+            auditEvents.Select(auditEvent => auditEvent.EventType));
         Assert.False(File.Exists(Path.Combine(factory.QuarantineRootPath, record.StorageName)));
         Assert.False(File.Exists(Path.Combine(factory.CleanRootPath, record.StorageName)));
     }
@@ -93,6 +109,13 @@ public sealed class ScannerWorkflowTests(AuthenticationApiFactory factory)
         Assert.NotNull(record.NextScanAttemptAtUtc);
         Assert.Single(attempts);
         Assert.Equal(ScanAttemptResult.Failed, attempts[0].Result);
+        List<AuditEvent> auditEvents = await LoadAuditEventsAsync(fileRecordId);
+        Assert.Equal(
+            [AuditEventType.ScanStarted, AuditEventType.ScanFailed],
+            auditEvents.Select(auditEvent => auditEvent.EventType));
+        Assert.Equal(
+            ScanFailureCode.ScannerUnavailable,
+            auditEvents[1].FailureCode);
         Assert.True(File.Exists(Path.Combine(factory.QuarantineRootPath, record.StorageName)));
         Assert.False(File.Exists(Path.Combine(factory.CleanRootPath, record.StorageName)));
 
@@ -295,6 +318,7 @@ public sealed class ScannerWorkflowTests(AuthenticationApiFactory factory)
         var workflow = new FileScanWorkflowService(
             dbContext,
             storagePaths,
+            scope.ServiceProvider.GetRequiredService<AuditEventWriter>(),
             Options.Create(workerOptions ?? CreateWorkerOptions()),
             effectiveTimeProvider,
             NullLogger<FileScanWorkflowService>.Instance);
@@ -335,6 +359,7 @@ public sealed class ScannerWorkflowTests(AuthenticationApiFactory factory)
             SizeBytes = content.LongLength,
             Sha256 = Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant(),
             DetectedMediaType = "application/pdf",
+            CorrelationId = Guid.NewGuid().ToString("N"),
             Status = FileRecordStatus.PendingScan,
             CreatedAtUtc = DateTimeOffset.UtcNow
         });
@@ -357,6 +382,18 @@ public sealed class ScannerWorkflowTests(AuthenticationApiFactory factory)
             .OrderBy(attempt => attempt.AttemptNumber)
             .ToListAsync();
         return (record, attempts);
+    }
+
+    private async Task<List<AuditEvent>> LoadAuditEventsAsync(Guid fileRecordId)
+    {
+        using IServiceScope scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<FileSentryDbContext>();
+        return await dbContext.AuditEvents
+            .AsNoTracking()
+            .Where(auditEvent => auditEvent.FileRecordId == fileRecordId)
+            .OrderBy(auditEvent => auditEvent.OccurredAtUtc)
+            .ThenBy(auditEvent => auditEvent.Id)
+            .ToListAsync();
     }
 
     private static ScannerWorkerOptions CreateWorkerOptions() => new()

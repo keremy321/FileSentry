@@ -57,6 +57,19 @@ public sealed class StartupValidationTests(AuthenticationApiFactory factory)
             StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("UploadRateLimit:PermitLimit", "0")]
+    [InlineData("UploadRateLimit:WindowSeconds", "0")]
+    public void InvalidUploadRateLimit_FailsStartupClearly(string key, string value)
+    {
+        using WebApplicationFactory<Program> invalidFactory = WithConfiguration(key, value);
+
+        OptionsValidationException exception = Assert.Throws<OptionsValidationException>(
+            () => _ = invalidFactory.Services);
+
+        Assert.Contains("UploadRateLimit", exception.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void StuckJobTimeoutNotLongerThanScanTimeout_FailsStartupClearly()
     {

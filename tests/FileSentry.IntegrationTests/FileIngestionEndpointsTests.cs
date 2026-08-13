@@ -295,6 +295,7 @@ public sealed class FileIngestionEndpointsTests(AuthenticationApiFactory factory
             requestBody,
             contentType,
             Guid.NewGuid(),
+            Guid.NewGuid().ToString("N"),
             cancellationSource.Token));
 
         Assert.True(cancellationSource.IsCancellationRequested);
