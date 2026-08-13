@@ -1,4 +1,5 @@
 using FileSentry.Api.Domain.Files;
+using FileSentry.Api.Domain.Scanning;
 using FileSentry.Api.Persistence.Configurations;
 using FileSentry.Api.Security;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -10,6 +11,8 @@ public sealed class FileSentryDbContext(DbContextOptions<FileSentryDbContext> op
     : IdentityUserContext<ApplicationUser, Guid>(options)
 {
     public DbSet<FileRecord> FileRecords => Set<FileRecord>();
+
+    public DbSet<ScanAttempt> ScanAttempts => Set<ScanAttempt>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -25,5 +28,6 @@ public sealed class FileSentryDbContext(DbContextOptions<FileSentryDbContext> op
             .IsUnique();
 
         builder.ApplyConfiguration(new FileRecordConfiguration());
+        builder.ApplyConfiguration(new ScanAttemptConfiguration());
     }
 }

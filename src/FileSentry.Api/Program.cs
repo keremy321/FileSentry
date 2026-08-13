@@ -1,8 +1,10 @@
 using System.Text;
 using System.Threading.RateLimiting;
 using FileSentry.Api.Application.Files;
+using FileSentry.Api.Application.Scanning;
 using FileSentry.Api.Infrastructure.Health;
 using FileSentry.Api.Infrastructure.Options;
+using FileSentry.Api.Infrastructure.Scanning;
 using FileSentry.Api.Infrastructure.Storage;
 using FileSentry.Api.Persistence;
 using FileSentry.Api.Security;
@@ -93,6 +95,35 @@ builder.Services
         $"{ClamAvOptions.SectionName}:Port must be between 1 and 65535.")
     .Validate(options => options.TimeoutSeconds is >= 1 and <= 30,
         $"{ClamAvOptions.SectionName}:TimeoutSeconds must be between 1 and 30.")
+    .Validate(options => options.ScanTimeoutSeconds is >= 1 and <= 300,
+        $"{ClamAvOptions.SectionName}:ScanTimeoutSeconds must be between 1 and 300.")
+    .Validate(options => options.MaximumStreamSizeBytes
+            is >= FileIngestionService.MaximumFileSizeBytes and <= 104857600,
+        $"{ClamAvOptions.SectionName}:MaximumStreamSizeBytes must be between 10 MiB and 100 MiB.")
+    .Validate(options => options.StreamChunkSizeBytes is >= 1024 and <= 1048576
+            && options.StreamChunkSizeBytes <= options.MaximumStreamSizeBytes,
+        $"{ClamAvOptions.SectionName}:StreamChunkSizeBytes must be between 1 KiB and 1 MiB and not exceed the stream limit.")
+    .ValidateOnStart();
+
+builder.Services
+    .AddOptions<ScannerWorkerOptions>()
+    .Bind(builder.Configuration.GetSection(ScannerWorkerOptions.SectionName))
+    .Validate(options => options.MaximumAttempts is >= 1 and <= 10,
+        $"{ScannerWorkerOptions.SectionName}:MaximumAttempts must be between 1 and 10.")
+    .Validate(options => options.InitialRetryDelaySeconds is >= 1 and <= 3600,
+        $"{ScannerWorkerOptions.SectionName}:InitialRetryDelaySeconds must be between 1 and 3600.")
+    .Validate(options => options.MaximumRetryDelaySeconds
+            is >= 1 and <= 86400
+            && options.MaximumRetryDelaySeconds >= options.InitialRetryDelaySeconds,
+        $"{ScannerWorkerOptions.SectionName}:MaximumRetryDelaySeconds must be between the initial delay and 86400.")
+    .Validate(options => options.StuckJobTimeoutSeconds is >= 2 and <= 86400,
+        $"{ScannerWorkerOptions.SectionName}:StuckJobTimeoutSeconds must be between 2 and 86400.")
+    .Validate(options => options.PollingIntervalMilliseconds is >= 100 and <= 60000,
+        $"{ScannerWorkerOptions.SectionName}:PollingIntervalMilliseconds must be between 100 and 60000.")
+    .Validate<IOptions<ClamAvOptions>>(
+        (options, clamAvOptions) =>
+            options.StuckJobTimeoutSeconds > clamAvOptions.Value.ScanTimeoutSeconds,
+        $"{ScannerWorkerOptions.SectionName}:StuckJobTimeoutSeconds must exceed ClamAV:ScanTimeoutSeconds.")
     .ValidateOnStart();
 
 builder.Services
@@ -187,7 +218,11 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<JwtTokenService>();
 builder.Services.AddSingleton<StoragePathProvider>();
 builder.Services.AddSingleton<FileFormatValidator>();
+builder.Services.AddSingleton<IClamAvClient, ClamAvClient>();
 builder.Services.AddScoped<FileIngestionService>();
+builder.Services.AddScoped<FileScanWorkflowService>();
+builder.Services.AddScoped<FileScanProcessor>();
+builder.Services.AddHostedService<FileScannerBackgroundService>();
 
 builder.Services
     .AddHealthChecks()
@@ -202,6 +237,7 @@ _ = app.Services.GetRequiredService<IOptions<ClamAvOptions>>().Value;
 _ = app.Services.GetRequiredService<IOptions<JwtOptions>>().Value;
 _ = app.Services.GetRequiredService<IOptions<AuthenticationRateLimitOptions>>().Value;
 _ = app.Services.GetRequiredService<IOptions<StorageOptions>>().Value;
+_ = app.Services.GetRequiredService<IOptions<ScannerWorkerOptions>>().Value;
 _ = app.Services.GetRequiredService<StoragePathProvider>();
 
 if (app.Environment.IsDevelopment())

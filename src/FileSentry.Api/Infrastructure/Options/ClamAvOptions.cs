@@ -9,4 +9,10 @@ public sealed class ClamAvOptions
     public int Port { get; set; } = 3310;
 
     public int TimeoutSeconds { get; set; } = 5;
+
+    public int ScanTimeoutSeconds { get; set; } = 30;
+
+    public long MaximumStreamSizeBytes { get; set; } = 10 * 1024 * 1024;
+
+    public int StreamChunkSizeBytes { get; set; } = 64 * 1024;
 }

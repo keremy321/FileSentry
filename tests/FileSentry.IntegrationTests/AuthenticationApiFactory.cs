@@ -46,6 +46,8 @@ public sealed class AuthenticationApiFactory : WebApplicationFactory<Program>, I
 
     public string QuarantineRootPath => Path.Combine(_storageRootPath, "quarantine");
 
+    public string CleanRootPath => Path.Combine(_storageRootPath, "clean");
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -62,6 +64,7 @@ public sealed class AuthenticationApiFactory : WebApplicationFactory<Program>, I
                 ["Jwt:AccessTokenLifetimeMinutes"] = "15",
                 ["AuthenticationRateLimit:PermitLimit"] = "1000",
                 ["AuthenticationRateLimit:WindowSeconds"] = "60",
+                ["ScannerWorker:Enabled"] = "false",
                 ["Storage:RootPath"] = _storageRootPath
             });
         });

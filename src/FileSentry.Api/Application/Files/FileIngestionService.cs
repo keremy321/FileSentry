@@ -57,6 +57,7 @@ public sealed class FileIngestionService(
                 OwnerId = ownerId,
                 OriginalFileName = uploadedFile.OriginalFileName,
                 StorageName = storageName,
+                StorageState = FileStorageState.Quarantine,
                 SizeBytes = uploadedFile.SizeBytes,
                 Sha256 = uploadedFile.Sha256,
                 DetectedMediaType = GetMediaType(detectedFormat),

@@ -9,7 +9,9 @@ public sealed class FileRecordConfiguration : IEntityTypeConfiguration<FileRecor
 {
     public void Configure(EntityTypeBuilder<FileRecord> builder)
     {
-        builder.ToTable("FileRecords");
+        builder.ToTable("FileRecords", table => table.HasCheckConstraint(
+            "CK_FileRecords_ScanAttemptCount_NonNegative",
+            "\"ScanAttemptCount\" >= 0"));
         builder.HasKey(record => record.Id);
 
         builder.Property(record => record.OriginalFileName)
@@ -17,6 +19,11 @@ public sealed class FileRecordConfiguration : IEntityTypeConfiguration<FileRecor
             .IsRequired();
         builder.Property(record => record.StorageName)
             .HasMaxLength(64)
+            .IsRequired();
+        builder.Property(record => record.StorageState)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(FileStorageState.Quarantine)
             .IsRequired();
         builder.Property(record => record.Sha256)
             .HasMaxLength(64)
@@ -31,10 +38,19 @@ public sealed class FileRecordConfiguration : IEntityTypeConfiguration<FileRecor
             .HasConversion<string>()
             .HasMaxLength(32)
             .IsRequired();
+        builder.Property(record => record.DetectionName)
+            .HasMaxLength(256);
+        builder.Property(record => record.LastScannerVersion)
+            .HasMaxLength(256);
+        builder.Property(record => record.LastScanFailureCode)
+            .HasConversion<string>()
+            .HasMaxLength(64);
         builder.Property(record => record.CreatedAtUtc)
             .IsRequired();
 
         builder.HasIndex(record => record.OwnerId);
+        builder.HasIndex(record => new { record.Status, record.NextScanAttemptAtUtc });
+        builder.HasIndex(record => new { record.Status, record.ScanningStartedAtUtc });
         builder.HasIndex(record => record.StorageName)
             .IsUnique();
 
