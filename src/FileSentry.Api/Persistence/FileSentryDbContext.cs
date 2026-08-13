@@ -1,3 +1,4 @@
+using FileSentry.Api.Domain.Auditing;
 using FileSentry.Api.Domain.Files;
 using FileSentry.Api.Domain.Scanning;
 using FileSentry.Api.Persistence.Configurations;
@@ -14,6 +15,8 @@ public sealed class FileSentryDbContext(DbContextOptions<FileSentryDbContext> op
 
     public DbSet<ScanAttempt> ScanAttempts => Set<ScanAttempt>();
 
+    public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -27,6 +30,7 @@ public sealed class FileSentryDbContext(DbContextOptions<FileSentryDbContext> op
             .HasDatabaseName("EmailIndex")
             .IsUnique();
 
+        builder.ApplyConfiguration(new AuditEventConfiguration());
         builder.ApplyConfiguration(new FileRecordConfiguration());
         builder.ApplyConfiguration(new ScanAttemptConfiguration());
     }

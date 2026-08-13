@@ -22,6 +22,8 @@ public sealed class FileRecord
 
     public string? ClientMediaType { get; set; }
 
+    public string? CorrelationId { get; set; }
+
     public FileRecordStatus Status { get; set; }
 
     public int ScanAttemptCount { get; set; }

@@ -1,4 +1,6 @@
+using FileSentry.Api.Application.Auditing;
 using FileSentry.Api.Contracts.Files;
+using FileSentry.Api.Domain.Auditing;
 using FileSentry.Api.Domain.Files;
 using FileSentry.Api.Domain.Scanning;
 using FileSentry.Api.Infrastructure.Storage;
@@ -11,6 +13,7 @@ namespace FileSentry.Api.Application.Files;
 public sealed class FileAccessService(
     FileSentryDbContext dbContext,
     StoragePathProvider storagePaths,
+    AuditEventWriter auditWriter,
     TimeProvider timeProvider,
     ILogger<FileAccessService> logger)
 {
@@ -60,6 +63,7 @@ public sealed class FileAccessService(
     public async Task<FileDownload> OpenDownloadAsync(
         Guid ownerId,
         Guid fileId,
+        string correlationId,
         CancellationToken cancellationToken)
     {
         DownloadRecord? record = await dbContext.FileRecords
@@ -118,6 +122,32 @@ public sealed class FileAccessService(
                 safeDownloadName = "download";
             }
 
+            try
+            {
+                auditWriter.Add(
+                    AuditEventType.FileDownloaded,
+                    correlationId,
+                    ownerId,
+                    record.Id,
+                    record.Status,
+                    record.Status);
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (Exception exception)
+            {
+                await content.DisposeAsync();
+                logger.LogError(
+                    exception,
+                    "Audit persistence prevented download of file {FileRecordId}. CorrelationId={CorrelationId}",
+                    record.Id,
+                    correlationId);
+                throw;
+            }
+
+            logger.LogInformation(
+                "Clean file {FileRecordId} was downloaded. CorrelationId={CorrelationId}",
+                record.Id,
+                correlationId);
             return new FileDownload(content, record.DetectedMediaType, safeDownloadName);
         }
         catch (FileAccessException)
@@ -138,6 +168,7 @@ public sealed class FileAccessService(
     public async Task DeleteAsync(
         Guid ownerId,
         Guid fileId,
+        string correlationId,
         CancellationToken cancellationToken)
     {
         dbContext.ChangeTracker.Clear();
@@ -189,14 +220,40 @@ public sealed class FileAccessService(
             }
         }
 
+        FileRecordStatus previousStatus = record.Status;
         record.Status = FileRecordStatus.Deleted;
         record.StorageState = FileStorageState.Deleted;
         record.ActiveScanAttemptId = null;
         record.ScanningStartedAtUtc = null;
         record.NextScanAttemptAtUtc = null;
         record.UpdatedAtUtc = timeProvider.GetUtcNow();
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(CancellationToken.None);
+        auditWriter.Add(
+            AuditEventType.FileDeleted,
+            correlationId,
+            ownerId,
+            record.Id,
+            previousStatus,
+            FileRecordStatus.Deleted);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            logger.LogCritical(
+                exception,
+                "Persistence failed after stored bytes were removed for file {FileRecordId}. CorrelationId={CorrelationId}",
+                record.Id,
+                correlationId);
+            throw;
+        }
+        logger.LogInformation(
+            "File {FileRecordId} transitioned from {PreviousStatus} to {NewStatus}. CorrelationId={CorrelationId}",
+            record.Id,
+            previousStatus,
+            FileRecordStatus.Deleted,
+            correlationId);
     }
 
     private void DeleteStoredBytes(string storageName)

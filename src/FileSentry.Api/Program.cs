@@ -1,8 +1,10 @@
 using System.Text;
 using System.Threading.RateLimiting;
+using FileSentry.Api.Application.Auditing;
 using FileSentry.Api.Application.Files;
 using FileSentry.Api.Application.Scanning;
 using FileSentry.Api.Infrastructure.Health;
+using FileSentry.Api.Infrastructure.Correlation;
 using FileSentry.Api.Infrastructure.Options;
 using FileSentry.Api.Infrastructure.Scanning;
 using FileSentry.Api.Infrastructure.Storage;
@@ -149,6 +151,15 @@ builder.Services
     .ValidateOnStart();
 
 builder.Services
+    .AddOptions<UploadRateLimitOptions>()
+    .Bind(builder.Configuration.GetSection(UploadRateLimitOptions.SectionName))
+    .Validate(options => options.PermitLimit is >= 1 and <= 1000,
+        $"{UploadRateLimitOptions.SectionName}:PermitLimit must be between 1 and 1000.")
+    .Validate(options => options.WindowSeconds is >= 1 and <= 3600,
+        $"{UploadRateLimitOptions.SectionName}:WindowSeconds must be between 1 and 3600.")
+    .ValidateOnStart();
+
+builder.Services
     .AddOptions<StorageOptions>()
     .Bind(builder.Configuration.GetSection(StorageOptions.SectionName))
     .Validate(options => !string.IsNullOrWhiteSpace(options.RootPath),
@@ -185,10 +196,14 @@ builder.Services.AddAuthorization();
 builder.Services.AddRateLimiter();
 builder.Services
     .AddOptions<RateLimiterOptions>()
-    .Configure<IOptions<AuthenticationRateLimitOptions>>((options, rateLimitOptionsAccessor) =>
+    .Configure<IOptions<AuthenticationRateLimitOptions>, IOptions<UploadRateLimitOptions>>((
+        options,
+        authenticationOptionsAccessor,
+        uploadOptionsAccessor) =>
     {
         AuthenticationRateLimitOptions authenticationRateLimitOptions =
-            rateLimitOptionsAccessor.Value;
+            authenticationOptionsAccessor.Value;
+        UploadRateLimitOptions uploadRateLimitOptions = uploadOptionsAccessor.Value;
         options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
         options.AddPolicy(AuthenticationRateLimitOptions.PolicyName, httpContext =>
             RateLimitPartition.GetFixedWindowLimiter(
@@ -200,15 +215,37 @@ builder.Services
                     QueueLimit = 0,
                     AutoReplenishment = true
                 }));
+        options.AddPolicy(UploadRateLimitOptions.PolicyName, httpContext =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                httpContext.User.FindFirst("sub")?.Value
+                    ?? $"anonymous:{httpContext.Connection.RemoteIpAddress}",
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = uploadRateLimitOptions.PermitLimit,
+                    Window = TimeSpan.FromSeconds(uploadRateLimitOptions.WindowSeconds),
+                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                    QueueLimit = 0,
+                    AutoReplenishment = true
+                }));
         options.OnRejected = async (context, _) =>
         {
+            string? policyName = context.HttpContext.GetEndpoint()?
+                .Metadata.GetMetadata<EnableRateLimitingAttribute>()?
+                .PolicyName;
+            bool isUpload = policyName == UploadRateLimitOptions.PolicyName;
             await Results.Problem(
                     statusCode: StatusCodes.Status429TooManyRequests,
-                    title: "Authentication rate limit exceeded",
-                    detail: "Too many authentication attempts were received.",
+                    title: isUpload
+                        ? "Upload rate limit exceeded"
+                        : "Authentication rate limit exceeded",
+                    detail: isUpload
+                        ? "Too many upload attempts were received."
+                        : "Too many authentication attempts were received.",
                     extensions: new Dictionary<string, object?>
                     {
-                        ["code"] = "AUTH_RATE_LIMITED"
+                        ["code"] = isUpload
+                            ? "UPLOAD_RATE_LIMITED"
+                            : "AUTH_RATE_LIMITED"
                     })
                 .ExecuteAsync(context.HttpContext);
         };
@@ -219,6 +256,7 @@ builder.Services.AddSingleton<JwtTokenService>();
 builder.Services.AddSingleton<StoragePathProvider>();
 builder.Services.AddSingleton<FileFormatValidator>();
 builder.Services.AddSingleton<IClamAvClient, ClamAvClient>();
+builder.Services.AddScoped<AuditEventWriter>();
 builder.Services.AddScoped<FileIngestionService>();
 builder.Services.AddScoped<FileAccessService>();
 builder.Services.AddScoped<FileScanWorkflowService>();
@@ -237,6 +275,7 @@ _ = app.Services.GetRequiredService<IOptions<PostgreSqlOptions>>().Value;
 _ = app.Services.GetRequiredService<IOptions<ClamAvOptions>>().Value;
 _ = app.Services.GetRequiredService<IOptions<JwtOptions>>().Value;
 _ = app.Services.GetRequiredService<IOptions<AuthenticationRateLimitOptions>>().Value;
+_ = app.Services.GetRequiredService<IOptions<UploadRateLimitOptions>>().Value;
 _ = app.Services.GetRequiredService<IOptions<StorageOptions>>().Value;
 _ = app.Services.GetRequiredService<IOptions<ScannerWorkerOptions>>().Value;
 _ = app.Services.GetRequiredService<StoragePathProvider>();
@@ -246,12 +285,13 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
+app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseHttpsRedirection();
 
 app.UseRouting();
-app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapControllers();
 app.MapHealthChecks("/health/live", new HealthCheckOptions

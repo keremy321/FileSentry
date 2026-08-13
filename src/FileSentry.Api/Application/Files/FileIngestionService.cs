@@ -1,6 +1,8 @@
 using System.Buffers;
 using System.Security.Cryptography;
+using FileSentry.Api.Application.Auditing;
 using FileSentry.Api.Contracts.Files;
+using FileSentry.Api.Domain.Auditing;
 using FileSentry.Api.Domain.Files;
 using FileSentry.Api.Infrastructure.Storage;
 using FileSentry.Api.Persistence;
@@ -14,7 +16,9 @@ public sealed class FileIngestionService(
     FileSentryDbContext dbContext,
     StoragePathProvider storagePaths,
     FileFormatValidator formatValidator,
-    TimeProvider timeProvider)
+    AuditEventWriter auditWriter,
+    TimeProvider timeProvider,
+    ILogger<FileIngestionService> logger)
 {
     public const long MaximumFileSizeBytes = 10 * 1024 * 1024;
 
@@ -28,6 +32,7 @@ public sealed class FileIngestionService(
         Stream requestBody,
         string? requestContentType,
         Guid ownerId,
+        string correlationId,
         CancellationToken cancellationToken)
     {
         UploadedTempFile? uploadedFile = null;
@@ -63,6 +68,7 @@ public sealed class FileIngestionService(
                 Sha256 = uploadedFile.Sha256,
                 DetectedMediaType = GetMediaType(detectedFormat),
                 ClientMediaType = uploadedFile.ClientMediaType,
+                CorrelationId = correlationId,
                 Status = FileRecordStatus.PendingScan,
                 CreatedAtUtc = now,
                 UpdatedAtUtc = now
@@ -76,8 +82,22 @@ public sealed class FileIngestionService(
             cancellationToken.ThrowIfCancellationRequested();
             File.Move(uploadedFile.TempPath, quarantinePath);
             movedToQuarantine = true;
+            auditWriter.Add(
+                AuditEventType.UploadAccepted,
+                correlationId,
+                ownerId,
+                record.Id,
+                newStatus: FileRecordStatus.PendingScan);
+            await dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(CancellationToken.None);
             committed = true;
+
+            logger.LogInformation(
+                "File {FileRecordId} was accepted for owner {ActorUserId} in state {NewStatus}. CorrelationId={CorrelationId}",
+                record.Id,
+                ownerId,
+                FileRecordStatus.PendingScan,
+                correlationId);
 
             return new FileUploadResponse(
                 record.Id,

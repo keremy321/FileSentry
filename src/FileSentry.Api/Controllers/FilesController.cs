@@ -3,8 +3,10 @@ using System.Security.Claims;
 using FileSentry.Api.Application.Files;
 using FileSentry.Api.Contracts.Files;
 using FileSentry.Api.Filters;
+using FileSentry.Api.Infrastructure.Options;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace FileSentry.Api.Controllers;
 
@@ -70,6 +72,7 @@ public sealed class FilesController(
             FileDownload download = await accessService.OpenDownloadAsync(
                 ownerId,
                 fileId,
+                HttpContext.TraceIdentifier,
                 cancellationToken);
             Response.Headers.XContentTypeOptions = "nosniff";
             return File(
@@ -97,7 +100,11 @@ public sealed class FilesController(
 
         try
         {
-            await accessService.DeleteAsync(ownerId, fileId, cancellationToken);
+            await accessService.DeleteAsync(
+                ownerId,
+                fileId,
+                HttpContext.TraceIdentifier,
+                cancellationToken);
             return NoContent();
         }
         catch (FileAccessException exception)
@@ -107,6 +114,7 @@ public sealed class FilesController(
     }
 
     [HttpPost]
+    [EnableRateLimiting(UploadRateLimitOptions.PolicyName)]
     [DisableFormValueModelBinding]
     [ProducesResponseType<FileUploadResponse>(StatusCodes.Status202Accepted)]
     public async Task<IActionResult> Upload(CancellationToken cancellationToken)
@@ -122,6 +130,7 @@ public sealed class FilesController(
                 Request.Body,
                 Request.ContentType,
                 ownerId,
+                HttpContext.TraceIdentifier,
                 cancellationToken);
             return Accepted(response);
         }
@@ -135,7 +144,10 @@ public sealed class FilesController(
         }
         catch (Exception exception)
         {
-            logger.LogError(exception, "Secure file ingestion failed.");
+            logger.LogError(
+                exception,
+                "Secure file ingestion failed. CorrelationId={CorrelationId}",
+                HttpContext.TraceIdentifier);
             return UploadProblem(new FileIngestionException(
                 StatusCodes.Status500InternalServerError,
                 "UPLOAD_FAILED",

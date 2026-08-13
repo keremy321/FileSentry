@@ -34,6 +34,8 @@ public sealed class FileRecordConfiguration : IEntityTypeConfiguration<FileRecor
             .IsRequired();
         builder.Property(record => record.ClientMediaType)
             .HasMaxLength(256);
+        builder.Property(record => record.CorrelationId)
+            .HasMaxLength(64);
         builder.Property(record => record.Status)
             .HasConversion<string>()
             .HasMaxLength(32)

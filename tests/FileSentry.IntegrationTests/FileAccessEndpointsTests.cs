@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using FileSentry.Api.Application.Scanning;
 using FileSentry.Api.Contracts.Files;
+using FileSentry.Api.Domain.Auditing;
 using FileSentry.Api.Domain.Files;
 using FileSentry.Api.Domain.Scanning;
 using FileSentry.Api.Infrastructure.Scanning;
@@ -154,6 +155,13 @@ public sealed class FileAccessEndpointsTests(AuthenticationApiFactory factory)
         Assert.DoesNotContain("../", rawDisposition, StringComparison.Ordinal);
         Assert.DoesNotContain("X-Evil:", rawDisposition, StringComparison.Ordinal);
         Assert.Contains("report", rawDisposition, StringComparison.OrdinalIgnoreCase);
+        AuditEvent auditEvent = Assert.Single(await LoadAuditEventsAsync(
+            record.Id,
+            AuditEventType.FileDownloaded));
+        Assert.Equal(ownerId, auditEvent.ActorUserId);
+        Assert.Equal(
+            response.Headers.GetValues("X-Correlation-ID").Single(),
+            auditEvent.CorrelationId);
     }
 
     [Fact]
@@ -241,6 +249,12 @@ public sealed class FileAccessEndpointsTests(AuthenticationApiFactory factory)
         Assert.Null(persisted.ActiveScanAttemptId);
         Assert.False(File.Exists(quarantinePath));
         Assert.False(File.Exists(cleanPath));
+        AuditEvent auditEvent = Assert.Single(await LoadAuditEventsAsync(
+            record.Id,
+            AuditEventType.FileDeleted));
+        Assert.Equal(ownerId, auditEvent.ActorUserId);
+        Assert.Equal(status, auditEvent.PreviousStatus);
+        Assert.Equal(FileRecordStatus.Deleted, auditEvent.NewStatus);
 
         HttpResponseMessage download = await client.GetAsync(
             $"/api/v1/files/{record.Id}/download");
@@ -286,7 +300,8 @@ public sealed class FileAccessEndpointsTests(AuthenticationApiFactory factory)
             attemptId,
             1,
             record.StorageName,
-            record.SizeBytes);
+            record.SizeBytes,
+            record.CorrelationId ?? Guid.NewGuid().ToString("N"));
 
         HttpResponseMessage deleted = await client.DeleteAsync($"/api/v1/files/{record.Id}");
         bool finalized = await workflow.CompleteAndFinalizeAsync(
@@ -365,6 +380,7 @@ public sealed class FileAccessEndpointsTests(AuthenticationApiFactory factory)
             SizeBytes = content.LongLength,
             Sha256 = Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant(),
             DetectedMediaType = "application/pdf",
+            CorrelationId = Guid.NewGuid().ToString("N"),
             Status = status,
             ScanAttemptCount = activeAttemptId.HasValue ? 1 : 0,
             ActiveScanAttemptId = activeAttemptId,
@@ -404,6 +420,19 @@ public sealed class FileAccessEndpointsTests(AuthenticationApiFactory factory)
         return await dbContext.FileRecords
             .AsNoTracking()
             .SingleAsync(record => record.Id == fileId);
+    }
+
+    private async Task<List<AuditEvent>> LoadAuditEventsAsync(
+        Guid fileId,
+        AuditEventType eventType)
+    {
+        using IServiceScope scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<FileSentryDbContext>();
+        return await dbContext.AuditEvents
+            .AsNoTracking()
+            .Where(auditEvent => auditEvent.FileRecordId == fileId
+                && auditEvent.EventType == eventType)
+            .ToListAsync();
     }
 
     private string CreateToken(Guid ownerId)

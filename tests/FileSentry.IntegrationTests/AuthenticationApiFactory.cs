@@ -64,6 +64,8 @@ public sealed class AuthenticationApiFactory : WebApplicationFactory<Program>, I
                 ["Jwt:AccessTokenLifetimeMinutes"] = "15",
                 ["AuthenticationRateLimit:PermitLimit"] = "1000",
                 ["AuthenticationRateLimit:WindowSeconds"] = "60",
+                ["UploadRateLimit:PermitLimit"] = "1000",
+                ["UploadRateLimit:WindowSeconds"] = "60",
                 ["ScannerWorker:Enabled"] = "false",
                 ["Storage:RootPath"] = _storageRootPath
             });

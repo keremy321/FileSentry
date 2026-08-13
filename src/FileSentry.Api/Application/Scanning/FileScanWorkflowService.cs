@@ -1,5 +1,8 @@
+using FileSentry.Api.Application.Auditing;
+using FileSentry.Api.Domain.Auditing;
 using FileSentry.Api.Domain.Files;
 using FileSentry.Api.Domain.Scanning;
+using FileSentry.Api.Infrastructure.Correlation;
 using FileSentry.Api.Infrastructure.Options;
 using FileSentry.Api.Infrastructure.Scanning;
 using FileSentry.Api.Infrastructure.Storage;
@@ -13,6 +16,7 @@ namespace FileSentry.Api.Application.Scanning;
 public sealed class FileScanWorkflowService(
     FileSentryDbContext dbContext,
     StoragePathProvider storagePaths,
+    AuditEventWriter auditWriter,
     IOptions<ScannerWorkerOptions> options,
     TimeProvider timeProvider,
     ILogger<FileScanWorkflowService> logger)
@@ -52,6 +56,7 @@ public sealed class FileScanWorkflowService(
 
         Guid attemptId = Guid.NewGuid();
         int attemptNumber = checked(record.ScanAttemptCount + 1);
+        record.CorrelationId ??= CorrelationIdPolicy.Create();
         record.Status = FileRecordStatus.Scanning;
         record.ScanAttemptCount = attemptNumber;
         record.ActiveScanAttemptId = attemptId;
@@ -70,15 +75,30 @@ public sealed class FileScanWorkflowService(
             StartedAtUtc = now,
             Result = ScanAttemptResult.InProgress
         });
+        auditWriter.Add(
+            AuditEventType.ScanStarted,
+            record.CorrelationId,
+            fileRecordId: record.Id,
+            previousStatus: FileRecordStatus.PendingScan,
+            newStatus: FileRecordStatus.Scanning);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+
+        logger.LogInformation(
+            "File {FileRecordId} scan attempt {AttemptNumber} transitioned from {PreviousStatus} to {NewStatus}. CorrelationId={CorrelationId}",
+            record.Id,
+            attemptNumber,
+            FileRecordStatus.PendingScan,
+            FileRecordStatus.Scanning,
+            record.CorrelationId);
 
         return new FileScanJob(
             record.Id,
             attemptId,
             attemptNumber,
             record.StorageName,
-            record.SizeBytes);
+            record.SizeBytes,
+            record.CorrelationId);
     }
 
     public async Task<bool> CompleteAndFinalizeAsync(
@@ -270,6 +290,14 @@ public sealed class FileScanWorkflowService(
 
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(CancellationToken.None);
+        logger.LogInformation(
+            "File {FileRecordId} scan attempt transitioned from {PreviousStatus} to {NewStatus} in {ScanDurationMilliseconds} ms with failure {FailureCode}. CorrelationId={CorrelationId}",
+            record.Id,
+            FileRecordStatus.Scanning,
+            record.Status,
+            GetDurationMilliseconds(attempt),
+            attempt.FailureCode,
+            record.CorrelationId);
         return true;
     }
 
@@ -301,6 +329,13 @@ public sealed class FileScanWorkflowService(
             record.DetectionName = null;
             record.LastScanFailureCode = null;
             ClearActiveClaim(record);
+            auditWriter.Add(
+                AuditEventType.ScanClean,
+                GetOrCreateCorrelationId(record),
+                fileRecordId: record.Id,
+                previousStatus: FileRecordStatus.Scanning,
+                newStatus: FileRecordStatus.Clean,
+                durationMilliseconds: GetDurationMilliseconds(attempt));
         }
         catch (Exception exception) when (
             exception is IOException or UnauthorizedAccessException or InvalidOperationException)
@@ -340,6 +375,13 @@ public sealed class FileScanWorkflowService(
 
         attempt.IsRetryable = false;
         ClearActiveClaim(record);
+        auditWriter.Add(
+            AuditEventType.MalwareDetected,
+            GetOrCreateCorrelationId(record),
+            fileRecordId: record.Id,
+            previousStatus: FileRecordStatus.Scanning,
+            newStatus: FileRecordStatus.Infected,
+            durationMilliseconds: GetDurationMilliseconds(attempt));
     }
 
     private async Task<int> CleanupInfectedFilesAsync(CancellationToken cancellationToken)
@@ -414,6 +456,14 @@ public sealed class FileScanWorkflowService(
                 ? now + CalculateBackoff(record.ScanAttemptCount)
                 : null;
         ClearActiveClaim(record);
+        auditWriter.Add(
+            AuditEventType.ScanFailed,
+            GetOrCreateCorrelationId(record),
+            fileRecordId: record.Id,
+            previousStatus: FileRecordStatus.Scanning,
+            newStatus: FileRecordStatus.ScanFailed,
+            failureCode: record.LastScanFailureCode,
+            durationMilliseconds: GetDurationMilliseconds(attempt));
     }
 
     private TimeSpan CalculateBackoff(int completedAttemptCount)
@@ -486,6 +536,18 @@ public sealed class FileScanWorkflowService(
     {
         record.ActiveScanAttemptId = null;
         record.ScanningStartedAtUtc = null;
+    }
+
+    private static string GetOrCreateCorrelationId(FileRecord record)
+    {
+        record.CorrelationId ??= CorrelationIdPolicy.Create();
+        return record.CorrelationId;
+    }
+
+    private static long GetDurationMilliseconds(ScanAttempt attempt)
+    {
+        DateTimeOffset completedAtUtc = attempt.CompletedAtUtc ?? attempt.StartedAtUtc;
+        return Math.Max(0, (long)(completedAtUtc - attempt.StartedAtUtc).TotalMilliseconds);
     }
 
     private static string? BoundMetadata(string? value)
