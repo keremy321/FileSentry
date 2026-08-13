@@ -7,7 +7,7 @@
 [![ClamAV](https://img.shields.io/badge/ClamAV-Malware%20Scanning-2B8A3E)](https://www.clamav.net/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)](https://www.docker.com/)
 
-**Status:** Design complete; implementation planned  
+**Status:** Infrastructure and authentication implemented; secure ingestion planned
 **Architecture:** Modular monolith with a database-backed background scanner  
 **License:** MIT (planned)
 

@@ -113,7 +113,7 @@ GET    /health/live
 GET    /health/ready
 ```
 
-Only health endpoints belong to the current infrastructure milestone. Other endpoints are planned, not implemented.
+The health and authentication endpoints are implemented. File endpoints remain planned.
 
 ## Security Boundaries
 
@@ -124,28 +124,27 @@ Only health endpoints belong to the current infrastructure milestone. Other endp
 5. User to file: authentication and ownership are separate checks.
 6. Application to infrastructure: timeouts, cancellation, and fail-closed error classification are required.
 
-## Planned Persistent Entities
+## Persistent Entities
 
-Do not implement these before their dedicated task:
+`ApplicationUser` is implemented with a GUID identifier and Identity-managed credentials.
 
-- `ApplicationUser`
+Do not implement the remaining entities before their dedicated task:
+
 - `FileRecord`
 - `ScanAttempt`
 - `AuditEvent`
 
-Do not create a migration until persistent entities and their EF configurations exist.
+The initial Identity migration is the only migration currently expected.
 
 ## Current State
 
-The solution was scaffolded in Visual Studio with:
+Local PostgreSQL and ClamAV infrastructure, dependency-aware health endpoints,
+PostgreSQL-backed Identity, registration/login, short-lived JWT bearer
+authentication, and the protected `/api/v1/auth/me` endpoint are implemented.
+Authentication integration tests use a real PostgreSQL 17 Testcontainer.
 
-- `FileSentry.Api`;
-- `FileSentry.UnitTests`;
-- `FileSentry.IntegrationTests`;
-- controller-based Web API and OpenAPI;
-- root README and Git repository structure.
-
-The current milestone is defined only in `CURRENT_TASK.md`. Update this status after a milestone is verified.
+Uploads, file records, storage, scanning, workers, and file authorization remain
+unimplemented. The current milestone is defined in `CURRENT_TASK.md`.
 
 ## Explicit Non-Goals for the Initial Release
 
