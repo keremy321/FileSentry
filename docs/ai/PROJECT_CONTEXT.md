@@ -17,7 +17,7 @@ The primary design rule is:
 | Architecture | Modular monolith |
 | Database | PostgreSQL 17 |
 | Persistence | Entity Framework Core with Npgsql |
-| Authentication | ASP.NET Core Identity and JWT bearer tokens, implemented in a later phase |
+| Authentication | ASP.NET Core Identity and JWT bearer tokens |
 | Scanner | Official ClamAV container; ClamD TCP protocol |
 | Scan transport | `INSTREAM` for file bytes, implemented in a later phase |
 | Storage | Local mounted quarantine, clean, and temporary directories |
@@ -49,7 +49,9 @@ The exact internal folders may grow with implemented behavior. Clear separation 
 
 ### API
 
-The API will authenticate requests, accept bounded upload streams, validate formats, generate safe internal identifiers, persist metadata, expose status, and stream clean files after ownership checks.
+The API authenticates requests and accepts bounded upload streams into quarantine
+using generated internal identifiers and server-side format validation. Status,
+download, and delete behavior remains planned.
 
 ### PostgreSQL
 
@@ -65,7 +67,8 @@ ClamAV is a local signature-based malware-scanning dependency. Health checks use
 
 ### Storage
 
-Runtime storage uses three fixed trusted roots:
+Runtime storage uses fixed trusted roots. Temporary and quarantine storage is
+implemented; clean storage is reserved for the scanner milestone:
 
 ```text
 data/
@@ -113,7 +116,8 @@ GET    /health/live
 GET    /health/ready
 ```
 
-The health and authentication endpoints are implemented. File endpoints remain planned.
+The health, authentication, and `POST /files` endpoints are implemented. The
+remaining file endpoints are planned.
 
 ## Security Boundaries
 
@@ -126,25 +130,30 @@ The health and authentication endpoints are implemented. File endpoints remain p
 
 ## Persistent Entities
 
-`ApplicationUser` is implemented with a GUID identifier and Identity-managed credentials.
+`ApplicationUser` is implemented with a GUID identifier and Identity-managed
+credentials. `FileRecord` is implemented with authenticated ownership, generated
+storage metadata, SHA-256, detected media type, and the initial `PendingScan` state.
 
 Do not implement the remaining entities before their dedicated task:
 
-- `FileRecord`
 - `ScanAttempt`
 - `AuditEvent`
 
-The initial Identity migration is the only migration currently expected.
+The current migrations are `InitialIdentity` and `AddSecureFileIngestion`.
 
 ## Current State
 
 Local PostgreSQL and ClamAV infrastructure, dependency-aware health endpoints,
 PostgreSQL-backed Identity, registration/login, short-lived JWT bearer
-authentication, and the protected `/api/v1/auth/me` endpoint are implemented.
-Authentication integration tests use a real PostgreSQL 17 Testcontainer.
+authentication, the protected `/api/v1/auth/me` endpoint, and authenticated secure
+file ingestion into non-public quarantine are implemented. Uploads are streamed with
+a 10 MiB limit and SHA-256 calculation; PDF, PNG, JPEG, and Word Open XML DOCX are
+validated server-side before a `PendingScan` record is committed. Integration tests
+use a real PostgreSQL 17 Testcontainer.
 
-Uploads, file records, storage, scanning, workers, and file authorization remain
-unimplemented. The current milestone is defined in `CURRENT_TASK.md`.
+Scanning, workers, scan attempts, clean promotion, infected handling, and file
+retrieval/deletion authorization remain unimplemented. The completed ingestion
+milestone and recommended next milestone are recorded in `CURRENT_TASK.md`.
 
 ## Explicit Non-Goals for the Initial Release
 

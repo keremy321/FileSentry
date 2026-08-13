@@ -1,7 +1,9 @@
 using System.Text;
 using System.Threading.RateLimiting;
+using FileSentry.Api.Application.Files;
 using FileSentry.Api.Infrastructure.Health;
 using FileSentry.Api.Infrastructure.Options;
+using FileSentry.Api.Infrastructure.Storage;
 using FileSentry.Api.Persistence;
 using FileSentry.Api.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -116,6 +118,13 @@ builder.Services
     .ValidateOnStart();
 
 builder.Services
+    .AddOptions<StorageOptions>()
+    .Bind(builder.Configuration.GetSection(StorageOptions.SectionName))
+    .Validate(options => !string.IsNullOrWhiteSpace(options.RootPath),
+        $"{StorageOptions.SectionName}:RootPath must not be empty.")
+    .ValidateOnStart();
+
+builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer();
 builder.Services
@@ -176,6 +185,9 @@ builder.Services
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<JwtTokenService>();
+builder.Services.AddSingleton<StoragePathProvider>();
+builder.Services.AddSingleton<FileFormatValidator>();
+builder.Services.AddScoped<FileIngestionService>();
 
 builder.Services
     .AddHealthChecks()
@@ -189,6 +201,8 @@ _ = app.Services.GetRequiredService<IOptions<PostgreSqlOptions>>().Value;
 _ = app.Services.GetRequiredService<IOptions<ClamAvOptions>>().Value;
 _ = app.Services.GetRequiredService<IOptions<JwtOptions>>().Value;
 _ = app.Services.GetRequiredService<IOptions<AuthenticationRateLimitOptions>>().Value;
+_ = app.Services.GetRequiredService<IOptions<StorageOptions>>().Value;
+_ = app.Services.GetRequiredService<StoragePathProvider>();
 
 if (app.Environment.IsDevelopment())
 {
