@@ -1,5 +1,6 @@
 @FileSentry.Api_HostAddress = http://localhost:5029
 @AccessToken = replace-with-access-token
+@FileId = replace-with-file-id
 
 GET {{FileSentry.Api_HostAddress}}/health/live
 Accept: application/json
@@ -34,5 +35,27 @@ Content-Type: application/json
 GET {{FileSentry.Api_HostAddress}}/api/v1/auth/me
 Authorization: Bearer {{AccessToken}}
 Accept: application/json
+
+###
+
+GET {{FileSentry.Api_HostAddress}}/api/v1/files
+Authorization: Bearer {{AccessToken}}
+Accept: application/json
+
+###
+
+GET {{FileSentry.Api_HostAddress}}/api/v1/files/{{FileId}}
+Authorization: Bearer {{AccessToken}}
+Accept: application/json
+
+###
+
+GET {{FileSentry.Api_HostAddress}}/api/v1/files/{{FileId}}/download
+Authorization: Bearer {{AccessToken}}
+
+###
+
+DELETE {{FileSentry.Api_HostAddress}}/api/v1/files/{{FileId}}
+Authorization: Bearer {{AccessToken}}
 
 ###

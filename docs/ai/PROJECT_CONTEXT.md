@@ -2,118 +2,128 @@
 
 ## Purpose
 
-FileSentry is a secure file-upload and malware-scanning API. It accepts authenticated uploads, validates their format, streams them into non-public quarantine storage, calculates SHA-256 hashes, scans them with a locally hosted ClamAV daemon, and releases only conclusively clean files through ownership-protected endpoints.
+FileSentry is a secure file-upload and malware-scanning API. It authenticates users,
+validates and streams uploads into non-public quarantine, calculates SHA-256, scans
+bytes with ClamAV, and exposes only conclusively clean content through owner-scoped
+endpoints.
 
 The primary design rule is:
 
-> Every uploaded file is untrusted until validation and malware scanning complete successfully.
+> Every uploaded file is untrusted until validation and malware scanning complete
+> successfully.
 
-## Initial Technology Decisions
+## Implemented technology
 
 | Area | Decision |
 |---|---|
-| Runtime | .NET 10 |
-| API | ASP.NET Core controllers with OpenAPI |
+| Runtime | .NET 10, exact SDK pinned in `global.json` |
+| API | ASP.NET Core controllers with development OpenAPI |
 | Architecture | Modular monolith |
 | Database | PostgreSQL 17 |
-| Persistence | Entity Framework Core with Npgsql |
+| Persistence | Entity Framework Core with Npgsql migrations |
 | Authentication | ASP.NET Core Identity and JWT bearer tokens |
-| Scanner | Official ClamAV container; ClamD TCP protocol |
-| Scan transport | ClamAV `INSTREAM` for streamed file bytes |
-| Storage | Local mounted quarantine, clean, and temporary directories |
+| Scanner | Official ClamAV container; clamd TCP protocol |
+| Scan transport | ClamAV `INSTREAM` over bounded streams |
+| Storage | Local temp, quarantine, and clean directories outside the web root |
 | Background processing | ASP.NET Core `BackgroundService` with durable database state |
 | Testing | xUnit, WebApplicationFactory, and Testcontainers |
-| Local infrastructure | Docker Compose |
-| CI | GitHub Actions |
+| Local infrastructure | Docker Compose for PostgreSQL and ClamAV |
+| CI | GitHub Actions on Ubuntu |
 
-## Solution Layout
+## Repository layout
 
 ```text
 FileSentry/
-├── deploy/
-├── docs/
-│   └── ai/
-├── src/
-│   └── FileSentry.Api/
-├── tests/
-│   ├── FileSentry.UnitTests/
-│   └── FileSentry.IntegrationTests/
-├── AGENTS.md
-├── FileSentry.slnx
-└── README.md
+|-- .github/workflows/ci.yml
+|-- deploy/
+|   |-- .env.example
+|   `-- docker-compose.yml
+|-- docs/
+|   |-- ai/
+|   |-- architecture.md
+|   |-- demo.md
+|   |-- PROJECT_PLAN.md
+|   `-- threat-model.md
+|-- src/FileSentry.Api/
+|-- tests/
+|   |-- FileSentry.UnitTests/
+|   `-- FileSentry.IntegrationTests/
+|-- AGENTS.md
+|-- FileSentry.slnx
+|-- global.json
+|-- LICENSE
+`-- README.md
 ```
 
-The exact internal folders may grow with implemented behavior. Clear separation is preferred over ceremonial layering.
-
-## Components
+## Component responsibilities
 
 ### API
 
-The API authenticates requests and accepts bounded upload streams into quarantine
-using generated internal identifiers and server-side format validation. It exposes
-owner-scoped file listing and metadata, streams only conclusively clean content, and
-supports durable logical deletion with stored-byte removal.
+The API registers/authenticates callers, accepts bounded upload streams under
+generated storage names, performs format validation, and returns safe metadata. It
+lists owner records, retrieves owner metadata, streams only owner-controlled clean
+content, and coordinates durable deletion.
 
 ### PostgreSQL
 
-PostgreSQL stores users, file records, scan attempts, security audit events,
-workflow locks, retry data, and current file state. Database state—not directory
-contents—is authoritative.
+PostgreSQL stores users, file records, scan attempts, security audit events, retry
+timing, and active workflow claims. Database state, not directory contents, is
+authoritative.
 
-### Scanner Worker
+### Scanner worker
 
-A background worker claims pending database records with PostgreSQL row locking,
-streams quarantined bytes to ClamAV, persists every attempt, promotes clean files,
-deletes infected bytes, retries transient failures with bounded backoff, and
-reclaims stale jobs after a crash.
+The in-process background worker claims eligible rows with PostgreSQL locking,
+streams quarantine bytes to ClamAV, records attempts, promotes clean files, deletes
+infected bytes, retries bounded transient failures, and recovers stale scanning jobs
+after a crash.
 
 ### ClamAV
 
-ClamAV is a local signature-based malware-scanning dependency. Health checks use
-`PING`; scans use `INSTREAM`. ClamAV never receives client-controlled paths.
+Health checks use `PING`; scans use `INSTREAM`. No client-controlled storage path is
+sent to the scanner. Compose binds port 3310 to loopback while the API runs on the
+host because clamd TCP has no transport security.
 
 ### Storage
 
-Runtime storage uses implemented fixed trusted temporary, quarantine, and clean
-roots:
+The configured root resolves outside the web root and contains fixed directories:
 
 ```text
 data/
-├── temp/
-├── quarantine/
-└── clean/
+|-- temp/
+|-- quarantine/
+`-- clean/
 ```
 
-Files use generated internal names. Original names are display metadata only. None of these directories is public static content.
+Files use generated internal names. Original names are sanitized display metadata.
+No upload directory is static web content.
 
-## File States
+## File policy and state
+
+- Allowed: PDF, PNG, JPEG (`.jpg`/`.jpeg`), and DOCX.
+- Maximum actual streamed file size: 10 MiB.
+- Client MIME type is untrusted metadata.
+- Extension and detected format must agree.
+- DOCX must be a valid Word Open XML package, not merely ZIP content.
 
 ```text
 PendingScan -> Scanning -> Clean
                         -> Infected
                         -> ScanFailed -> PendingScan (bounded retry)
 
-PendingScan/Scanning/Clean/Infected/ScanFailed -> Deleted
+PendingScan / Scanning / Clean / Infected / ScanFailed -> Deleted
 ```
 
-Only `Clean` content may be downloaded, and only by its owner. Scanner errors are non-downloadable.
+Only `Clean` content may be downloaded, and only by its owner. Scanner errors are
+non-downloadable. Infected bytes are removed while safe metadata remains.
 
-## Initial File Policy
-
-- Allowed: PDF, PNG, JPEG, DOCX.
-- Maximum size: 10 MiB.
-- Rejected: executables, scripts, generic archives, HTML, SVG, `.doc`, `.docm`, unknown formats, and extension/signature mismatches.
-- Client MIME type is untrusted metadata.
-- Format verification uses server-side signatures and format-aware checks.
-- DOCX must be a valid Open XML Word package, not merely a ZIP file.
-
-## Planned API
+## Implemented API
 
 Base path: `/api/v1`.
 
 ```text
 POST   /auth/register
 POST   /auth/login
+GET    /auth/me
 POST   /files
 GET    /files
 GET    /files/{fileId}
@@ -123,95 +133,77 @@ GET    /health/live
 GET    /health/ready
 ```
 
-All listed health, authentication, ingestion, owner-scoped metadata, download, and
-delete endpoints are implemented.
+File routes require authentication. Owner ID is included in read/download/delete
+queries so cross-owner identifiers behave like missing records.
 
 Requests receive a validated or generated `X-Correlation-ID`. Authentication and
 upload endpoints use separate startup-validated fixed-window rate-limit policies;
 uploads are partitioned by authenticated user ID.
 
-## Security Boundaries
+## Persistent entities and migrations
 
-1. Client to API: all request data is untrusted.
-2. API to filesystem: only generated paths under fixed roots are permitted.
-3. Quarantine to scanner: content remains untrusted during scanning.
-4. Scanner to clean storage: promotion requires an exact conclusive clean result.
-5. User to file: authentication and ownership are separate checks.
-6. Application to infrastructure: timeouts, cancellation, and fail-closed error classification are required.
+`ApplicationUser` uses a GUID Identity key. `FileRecord` stores ownership, generated
+storage metadata, safe original name, size, SHA-256, detected type, correlation,
+workflow/storage state, retry timing, and scanner result metadata. `ScanAttempt`
+records each claim and controlled result/failure metadata. `AuditEvent` records a
+strictly controlled event type, actor/file IDs where applicable, correlation, UTC
+time, state transition, bounded failure code, and duration.
 
-## Persistent Entities
+The checked-in migrations are:
 
-`ApplicationUser` is implemented with a GUID identifier and Identity-managed
-credentials. `FileRecord` is implemented with authenticated ownership, generated
-storage metadata, SHA-256, detected media type, current scan/storage state, created
-and updated timestamps, retry timing, and scanner result metadata. `ScanAttempt`
-durably records each claim, outcome, failure classification, threat name, and
-scanner version when available.
+1. `InitialIdentity`;
+2. `AddSecureFileIngestion`;
+3. `AddDurableClamAvScanning`;
+4. `AddFileAuthorizationLifecycle`;
+5. `AddSecurityAuditEvents`.
 
-`AuditEvent` durably records controlled security events with actor/file identifiers,
-correlation, UTC time, bounded workflow states, failure classification, and scan
-duration. Its schema deliberately has no arbitrary metadata or content field.
+The API does not auto-migrate; clean-clone setup explicitly runs `dotnet ef database
+update`.
 
-The current migrations are `InitialIdentity`, `AddSecureFileIngestion`,
-`AddDurableClamAvScanning`, `AddFileAuthorizationLifecycle`, and
-`AddSecurityAuditEvents`.
+## Security decisions
 
-## Current State
+1. Client request data is untrusted.
+2. Only generated paths under trusted roots are valid.
+3. Quarantine content remains untrusted even after format validation.
+4. Only an exact conclusive scanner clean result permits promotion.
+5. Authentication and per-object ownership are separate checks.
+6. Dependency failures must leave content unavailable.
+7. Audit and structured logging fields exclude bytes, filenames in free-form logs,
+   tokens, passwords, keys, database secrets, and raw malware.
+8. Security-critical options validate at startup.
 
-Local PostgreSQL and ClamAV infrastructure, dependency-aware health endpoints,
-PostgreSQL-backed Identity, registration/login, short-lived JWT bearer
-authentication, the protected `/api/v1/auth/me` endpoint, and authenticated secure
-file ingestion into non-public quarantine are implemented. Uploads are streamed with
-a 10 MiB limit and SHA-256 calculation; PDF, PNG, JPEG, and Word Open XML DOCX are
-validated server-side before a `PendingScan` record is committed.
+## Current verified state
 
-Durable asynchronous scanning is implemented with PostgreSQL claims and persisted
-attempts. Exact ClamAV clean results are promoted to clean storage; detections retain
-safe metadata and remove stored bytes; inconclusive results remain quarantined and
-fail closed with bounded retries. Stale claims are recovered after restarts.
-Integration tests use PostgreSQL 17 and real ClamAV Testcontainers.
+The MVP implements infrastructure health, Identity/JWT authentication, secure
+ingestion, durable ClamAV scanning and recovery, owner-protected file lifecycle,
+auditing/correlation/rate limiting, adversarial tests, and GitHub Actions CI.
 
-Owner-protected file list, metadata, clean download, and delete endpoints are
-implemented. Ownership is included in database lookups so cross-owner identifiers
-behave like missing records. Downloads use only trusted clean storage and safe
-response metadata. Deletion is coordinated with scanner row locking, removes stored
-bytes, and prevents a completed scan from reviving a deleted record.
+Integration tests use disposable PostgreSQL 17 and real ClamAV Testcontainers. The
+hosted CI has been observed passing from a clean checkout without User Secrets or
+repository secrets. Local development uses an ignored `deploy/.env` for Compose and
+.NET User Secrets (or equivalent external configuration) for the database
+connection string and JWT signing key.
 
-Security auditing is implemented for accepted uploads, scan start/outcomes,
-downloads, and deletions. Audit writes fail closed and participate in the associated
-database unit of work where feasible. Structured workflow logs use controlled IDs,
-states, durations, and failure codes without filenames or content. Storage remains
-outside static web content, and the host-development ClamAV mapping remains
-loopback-only.
+Release documentation now lives in the README plus focused architecture, threat
+model, demo, and project-plan files. No tag or GitHub release is part of this
+milestone.
 
-GitHub Actions CI restores, builds, runs the full Testcontainers-backed test suite,
-verifies formatting, audits NuGet dependencies, and validates Docker Compose from
-a clean Ubuntu runner. The workflow uses an exact .NET 10 SDK, read-only repository
-permissions, no repository secrets, and ephemeral test-only infrastructure values.
+## Limitations and explicit non-goals
 
-## Explicit Non-Goals for the Initial Release
+- A clean antivirus result is not proof that a file is harmless.
+- Local storage and the in-process worker target a single host.
+- There is no frontend, public sharing, admin API/UI, cloud storage, message broker,
+  multi-engine scanning, sandbox execution, content disarm, OCR, document preview,
+  Kubernetes, or distributed rate limiting.
+- Production TLS, managed secrets, backup/restore, monitoring, host permissions, and
+  retention/quota policy remain operational responsibilities.
 
-- frontend or mobile UI;
-- microservices;
-- public sharing;
-- cloud object storage;
-- message broker;
-- multi-engine scanning;
-- sandbox execution;
-- OCR, document extraction, or LLM analysis;
-- content disarm and reconstruction;
-- Kubernetes or multi-region deployment;
-- resumable uploads;
-- claiming that antivirus can guarantee harmless content.
+## Trustworthy completion criteria
 
-## Definition of a Trustworthy Implementation
-
-- clean clone builds and tests;
-- setup is reproducible;
-- secrets are externalized;
-- all dependency failures are safe;
+- clean checkout restores, builds, tests, and applies migrations reproducibly;
+- secrets and runtime artifacts remain external to source control;
+- dependency failures fail closed;
 - workflow state survives restarts;
 - object ownership is enforced in database queries;
-- tests cover adversarial and failure cases;
-- documentation distinguishes implemented behavior from planned behavior.
-
+- adversarial and real-dependency tests remain green;
+- documentation separates implemented behavior, limitations, and future work.
