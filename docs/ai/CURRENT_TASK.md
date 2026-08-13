@@ -1,68 +1,63 @@
-# Current Task: GitHub Actions CI Pipeline
+# Current Task: Release Documentation Hardening
 
 ## Objective
 
-Add a focused GitHub Actions workflow that proves FileSentry restores, builds, and
-passes its complete automated verification from a clean checkout without developer
-User Secrets or repository credentials.
+Synchronize the repository documentation with the verified FileSentry MVP and make
+local setup reproducible from a clean clone. This milestone changes documentation
+and release-supporting repository files only; application behavior remains intact.
 
-The completed application behavior and existing Testcontainers architecture must
-remain unchanged.
+## Scope
 
-## Workflow Scope
+- Add a complete README covering architecture, security controls, local setup,
+  configuration, migrations, API usage, tests, CI, and residual risk.
+- Correct stale planned/future wording in the project plan and project context.
+- Add concise architecture, threat-model, and demonstration references where they
+  provide lasting value.
+- Add and verify the MIT license.
+- Confirm `.env.example`, ignore rules, Compose, CI, and tracked files are safe and
+  consistent with the documented setup.
+- Run the full reproducibility command set and inspect final status/diff.
 
-- Run for pull requests and pushes to `main`, with manual dispatch available.
-- Grant read-only repository contents permission.
-- Cancel superseded runs for the same workflow/ref.
-- Use an Ubuntu hosted runner and a pinned .NET 10 SDK.
-- Restore `FileSentry.slnx`.
-- Validate Docker Compose configuration with explicit ephemeral test-only values.
-- Pre-pull the PostgreSQL and ClamAV images already used by integration tests.
-- Build the solution in Release configuration.
-- Run the full unit and integration suite using the existing Testcontainers setup.
-- Verify formatting and audit direct/transitive NuGet dependencies.
+## Accuracy Boundaries
 
-## Dependency Strategy
-
-Integration tests continue to create disposable PostgreSQL and ClamAV containers;
-the workflow must not create parallel service containers or depend on a checked-in
-`.env`. PostgreSQL test passwords and JWT keys remain generated at test runtime.
-Compose validation receives only non-secret, step-scoped placeholder values.
-
-## Security and Maintainability
-
-- Use only stable official GitHub Actions required for checkout and SDK setup.
-- Pin the SDK version and keep action versions explicit.
-- Do not grant write permissions, consume repository secrets, or persist test
-  credentials.
-- Do not deploy, publish images, create releases, or introduce cloud resources.
-- Keep the workflow as one readable verification job unless an actual independent
-  job boundary is needed.
-
-## Verification
-
-Locally run restore, Release build, full tests, formatting verification, NuGet
-vulnerability audit, Docker Compose config validation, and diff/status checks.
-Inspect the workflow YAML and report hosted GitHub runner execution as unverified
-until the workflow has actually run after push.
+- Docker Compose starts PostgreSQL and ClamAV; the API currently runs on the host.
+- Local API startup requires a PostgreSQL connection string and JWT signing key in
+  .NET User Secrets (or equivalent external configuration).
+- PostgreSQL remains the workflow source of truth and storage remains outside the
+  web root.
+- Only conclusively `Clean`, owner-scoped files are downloadable.
+- A ClamAV clean result reduces risk but never guarantees harmless content.
+- Documentation must distinguish the implemented MVP from limitations and future
+  enhancements without recording volatile test counts.
 
 ## Out of Scope
 
-- deployment, Docker publishing, or GitHub releases;
-- CodeQL or additional security platforms;
-- cloud infrastructure, frontend work, or unrelated refactoring.
+- application features, entities, endpoints, or scanner changes;
+- admin or frontend functionality;
+- cloud/deployment work, CodeQL, or release automation;
+- commits, pushes, tags, GitHub releases, or remote repository changes.
 
-Do not create a commit or push.
+## Verification
 
-## Verified Completion
+Run restore, Release build, the full test suite, formatting verification, migration
+listing, Docker Compose config validation with the ignored local environment file,
+NuGet vulnerability audit, and diff/status checks. Compare the documented startup
+steps against actual configuration and container health where locally available.
 
-Implemented and locally verified on 2026-08-14. The workflow uses one read-only
-Ubuntu job, an exact .NET 10 SDK, the existing PostgreSQL and ClamAV Testcontainers
-architecture, and step-scoped non-secret values for Docker Compose validation.
+Recommended next milestone after verified completion: `chore/final-verification`.
 
-Restore, Release build, all 106 tests, formatting verification, NuGet vulnerability
-audit, Docker Compose validation, and diff checks completed successfully locally.
-The workflow was inspected, but its first execution on a GitHub-hosted runner remains
-unverified until the branch is pushed.
+## Verified completion
 
-Recommended next milestone: `docs/release-hardening`.
+Completed and locally verified on 2026-08-14. The repository now includes an
+implementation-accurate README, MIT license, focused architecture/threat/demo
+guides, a current project plan and project context, and expanded API request samples.
+
+The pinned tool and solution restore, zero-warning Release build, full unit and
+integration suite, formatting verification, migration list/database update, Docker
+Compose validation and healthy startup, NuGet vulnerability audit, manual API
+liveness/readiness/OpenAPI/correlation probes, link/artifact checks, and diff checks
+all completed successfully. The previously implemented hosted GitHub Actions
+workflow has also been observed passing without repository secrets.
+
+No application feature, commit, push, tag, GitHub release, or remote setting was
+created or changed.
