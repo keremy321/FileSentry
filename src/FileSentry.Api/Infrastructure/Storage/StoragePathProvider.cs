@@ -29,8 +29,10 @@ public sealed class StoragePathProvider
 
         TempRootPath = Path.Combine(RootPath, "temp");
         QuarantineRootPath = Path.Combine(RootPath, "quarantine");
+        CleanRootPath = Path.Combine(RootPath, "clean");
         Directory.CreateDirectory(TempRootPath);
         Directory.CreateDirectory(QuarantineRootPath);
+        Directory.CreateDirectory(CleanRootPath);
     }
 
     public string RootPath { get; }
@@ -38,6 +40,8 @@ public sealed class StoragePathProvider
     public string TempRootPath { get; }
 
     public string QuarantineRootPath { get; }
+
+    public string CleanRootPath { get; }
 
     public string CreateTempPath() => Path.Combine(
         TempRootPath,
@@ -47,11 +51,21 @@ public sealed class StoragePathProvider
 
     public string GetQuarantinePath(string storageName)
     {
+        return GetContainedPath(QuarantineRootPath, storageName);
+    }
+
+    public string GetCleanPath(string storageName)
+    {
+        return GetContainedPath(CleanRootPath, storageName);
+    }
+
+    private static string GetContainedPath(string rootPath, string storageName)
+    {
         string candidatePath = Path.GetFullPath(
-            Path.Combine(QuarantineRootPath, storageName));
-        if (!IsPathWithin(candidatePath, QuarantineRootPath))
+            Path.Combine(rootPath, storageName));
+        if (!IsPathWithin(candidatePath, rootPath))
         {
-            throw new InvalidOperationException("Generated quarantine path escaped its trusted root.");
+            throw new InvalidOperationException("Generated storage path escaped its trusted root.");
         }
 
         return candidatePath;

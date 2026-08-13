@@ -41,6 +41,42 @@ public sealed class StartupValidationTests(AuthenticationApiFactory factory)
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void InvalidScannerAttemptLimit_FailsStartupClearly()
+    {
+        using WebApplicationFactory<Program> invalidFactory = WithConfiguration(
+            "ScannerWorker:MaximumAttempts",
+            "0");
+
+        OptionsValidationException exception = Assert.Throws<OptionsValidationException>(
+            () => _ = invalidFactory.Services);
+
+        Assert.Contains(
+            "ScannerWorker:MaximumAttempts",
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void StuckJobTimeoutNotLongerThanScanTimeout_FailsStartupClearly()
+    {
+        using WebApplicationFactory<Program> invalidFactory = factory.WithWebHostBuilder(builder =>
+            builder.ConfigureAppConfiguration((_, configuration) =>
+                configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ClamAV:ScanTimeoutSeconds"] = "30",
+                    ["ScannerWorker:StuckJobTimeoutSeconds"] = "30"
+                })));
+
+        OptionsValidationException exception = Assert.Throws<OptionsValidationException>(
+            () => _ = invalidFactory.Services);
+
+        Assert.Contains(
+            "StuckJobTimeoutSeconds must exceed ClamAV:ScanTimeoutSeconds",
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
     private WebApplicationFactory<Program> WithConfiguration(string key, string value) =>
         factory.WithWebHostBuilder(builder =>
             builder.ConfigureAppConfiguration((_, configuration) =>

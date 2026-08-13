@@ -19,7 +19,7 @@ The primary design rule is:
 | Persistence | Entity Framework Core with Npgsql |
 | Authentication | ASP.NET Core Identity and JWT bearer tokens |
 | Scanner | Official ClamAV container; ClamD TCP protocol |
-| Scan transport | `INSTREAM` for file bytes, implemented in a later phase |
+| Scan transport | ClamAV `INSTREAM` for streamed file bytes |
 | Storage | Local mounted quarantine, clean, and temporary directories |
 | Background processing | ASP.NET Core `BackgroundService` with durable database state |
 | Testing | xUnit, WebApplicationFactory, and Testcontainers |
@@ -59,16 +59,20 @@ PostgreSQL will store users, file records, scan attempts, audit events, workflow
 
 ### Scanner Worker
 
-A background worker will claim pending database records, stream quarantined bytes to ClamAV, persist every attempt, promote clean files, delete infected bytes, retry transient failures, and reclaim stale jobs after a crash.
+A background worker claims pending database records with PostgreSQL row locking,
+streams quarantined bytes to ClamAV, persists every attempt, promotes clean files,
+deletes infected bytes, retries transient failures with bounded backoff, and
+reclaims stale jobs after a crash.
 
 ### ClamAV
 
-ClamAV is a local signature-based malware-scanning dependency. Health checks use `PING`; later scans use `INSTREAM`. ClamAV should not receive client-controlled paths.
+ClamAV is a local signature-based malware-scanning dependency. Health checks use
+`PING`; scans use `INSTREAM`. ClamAV never receives client-controlled paths.
 
 ### Storage
 
-Runtime storage uses fixed trusted roots. Temporary and quarantine storage is
-implemented; clean storage is reserved for the scanner milestone:
+Runtime storage uses implemented fixed trusted temporary, quarantine, and clean
+roots:
 
 ```text
 data/
@@ -132,14 +136,16 @@ remaining file endpoints are planned.
 
 `ApplicationUser` is implemented with a GUID identifier and Identity-managed
 credentials. `FileRecord` is implemented with authenticated ownership, generated
-storage metadata, SHA-256, detected media type, and the initial `PendingScan` state.
+storage metadata, SHA-256, detected media type, current scan/storage state, retry
+timing, and scanner result metadata. `ScanAttempt` durably records each claim,
+outcome, failure classification, threat name, and scanner version when available.
 
 Do not implement the remaining entities before their dedicated task:
 
-- `ScanAttempt`
 - `AuditEvent`
 
-The current migrations are `InitialIdentity` and `AddSecureFileIngestion`.
+The current migrations are `InitialIdentity`, `AddSecureFileIngestion`, and
+`AddDurableClamAvScanning`.
 
 ## Current State
 
@@ -148,12 +154,17 @@ PostgreSQL-backed Identity, registration/login, short-lived JWT bearer
 authentication, the protected `/api/v1/auth/me` endpoint, and authenticated secure
 file ingestion into non-public quarantine are implemented. Uploads are streamed with
 a 10 MiB limit and SHA-256 calculation; PDF, PNG, JPEG, and Word Open XML DOCX are
-validated server-side before a `PendingScan` record is committed. Integration tests
-use a real PostgreSQL 17 Testcontainer.
+validated server-side before a `PendingScan` record is committed.
 
-Scanning, workers, scan attempts, clean promotion, infected handling, and file
-retrieval/deletion authorization remain unimplemented. The completed ingestion
-milestone and recommended next milestone are recorded in `CURRENT_TASK.md`.
+Durable asynchronous scanning is implemented with PostgreSQL claims and persisted
+attempts. Exact ClamAV clean results are promoted to clean storage; detections retain
+safe metadata and remove stored bytes; inconclusive results remain quarantined and
+fail closed with bounded retries. Stale claims are recovered after restarts.
+Integration tests use PostgreSQL 17 and real ClamAV Testcontainers.
+
+File list/metadata/download/delete endpoints and their ownership authorization
+remain unimplemented. The completed scanner milestone and recommended next
+milestone are recorded in `CURRENT_TASK.md`.
 
 ## Explicit Non-Goals for the Initial Release
 
