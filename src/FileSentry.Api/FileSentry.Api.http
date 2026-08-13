@@ -1,6 +1,11 @@
 @FileSentry.Api_HostAddress = http://localhost:5029
 
-GET {{FileSentry.Api_HostAddress}}/weatherforecast/
+GET {{FileSentry.Api_HostAddress}}/health/live
+Accept: application/json
+
+###
+
+GET {{FileSentry.Api_HostAddress}}/health/ready
 Accept: application/json
 
 ###
