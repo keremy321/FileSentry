@@ -1,84 +1,68 @@
-# Current Task: Audit, Correlation, and Rate-Limit Hardening
+# Current Task: GitHub Actions CI Pipeline
 
 ## Objective
 
-Add durable security auditing, request/worker correlation, focused upload rate
-limiting, and small operational security improvements without changing the core
-file workflow.
+Add a focused GitHub Actions workflow that proves FileSentry restores, builds, and
+passes its complete automated verification from a clean checkout without developer
+User Secrets or repository credentials.
 
-The completed authentication, ingestion, scanner, file authorization, and health
-behavior must remain intact.
+The completed application behavior and existing Testcontainers architecture must
+remain unchanged.
 
-## Audit Scope
+## Workflow Scope
 
-Persist safe `AuditEvent` records for:
+- Run for pull requests and pushes to `main`, with manual dispatch available.
+- Grant read-only repository contents permission.
+- Cancel superseded runs for the same workflow/ref.
+- Use an Ubuntu hosted runner and a pinned .NET 10 SDK.
+- Restore `FileSentry.slnx`.
+- Validate Docker Compose configuration with explicit ephemeral test-only values.
+- Pre-pull the PostgreSQL and ClamAV images already used by integration tests.
+- Build the solution in Release configuration.
+- Run the full unit and integration suite using the existing Testcontainers setup.
+- Verify formatting and audit direct/transitive NuGet dependencies.
 
-- upload accepted;
-- scan started, clean, malware detected, and failed;
-- file downloaded;
-- file deleted.
+## Dependency Strategy
 
-Audit fields are limited to event ID, actor/file identifiers where applicable,
-event type, UTC timestamp, correlation ID, controlled workflow states, a bounded
-failure classification, and scan duration. Audit storage must never accept file
-content, credentials, tokens, secrets, arbitrary client objects, or raw malware.
+Integration tests continue to create disposable PostgreSQL and ClamAV containers;
+the workflow must not create parallel service containers or depend on a checked-in
+`.env`. PostgreSQL test passwords and JWT keys remain generated at test runtime.
+Compose validation receives only non-secret, step-scoped placeholder values.
 
-Audit writes participate in the same PostgreSQL unit of work as the associated
-state change where feasible. A download is not returned unless its audit write
-succeeds. Failures propagate and fail safely rather than silently dropping the
-audit event.
+## Security and Maintainability
 
-## Correlation and Logging
+- Use only stable official GitHub Actions required for checkout and SDK setup.
+- Pin the SDK version and keep action versions explicit.
+- Do not grant write permissions, consume repository secrets, or persist test
+  credentials.
+- Do not deploy, publish images, create releases, or introduce cloud resources.
+- Keep the workflow as one readable verification job unless an actual independent
+  job boundary is needed.
 
-- Accept one syntactically safe `X-Correlation-ID` or generate a new identifier.
-- Return the effective correlation ID and use it as the request trace identifier.
-- Persist the ingestion correlation ID on the file record so worker scan events
-  and structured logs retain durable correlation after restarts.
-- Log only structured file IDs, correlation IDs, state transitions, bounded scan
-  duration, and controlled failure codes; never log filenames, content, tokens,
-  passwords, keys, database secrets, or malware bytes.
+## Verification
 
-## Upload Rate Limit
-
-Apply a startup-validated built-in fixed-window policy to authenticated
-`POST /api/v1/files` requests. Partition authenticated uploads by user ID, keep the
-existing IP-partitioned authentication limiter unchanged, and return stable
-`ProblemDetails` code `UPLOAD_RATE_LIMITED` for rejected uploads.
-
-## Operational Boundaries
-
-- Storage remains outside the web root and is not static content.
-- Trusted storage roots and all security-critical options fail validation clearly.
-- ClamAV remains loopback-bound in the host development deployment.
-- Do not add distributed rate limiting, Redis, OpenTelemetry, or unrelated
-  refactoring.
-
-## Tests and Verification
-
-Cover audit fields and safe schema, all required event types, request-to-worker
-correlation, normal and excessive upload traffic, authentication precedence, and
-continued authentication rate limiting. Run restore, Release build/tests, EF
-migration list/update, formatting, diff checks, dependency audit, container health,
-and inspect logs/audit rows for sensitive data.
+Locally run restore, Release build, full tests, formatting verification, NuGet
+vulnerability audit, Docker Compose config validation, and diff/status checks.
+Inspect the workflow YAML and report hosted GitHub runner execution as unverified
+until the workflow has actually run after push.
 
 ## Out of Scope
 
-- CI or GitHub Actions;
-- admin audit APIs or UI;
-- public sharing, signed URLs, retention cleanup, dashboards, or OpenTelemetry;
-- cloud storage, message brokers, or frontend work.
+- deployment, Docker publishing, or GitHub releases;
+- CodeQL or additional security platforms;
+- cloud infrastructure, frontend work, or unrelated refactoring.
 
 Do not create a commit or push.
 
 ## Verified Completion
 
-Implemented and verified on 2026-08-14. Durable controlled-field audit events,
-request and worker correlation, structured workflow logging, and authenticated
-per-user upload rate limiting passed the PostgreSQL-backed integration suite. The
-existing authentication limiter, ingestion, real ClamAV scanning, authorization,
-downloads, deletes, and health behavior remain green.
+Implemented and locally verified on 2026-08-14. The workflow uses one read-only
+Ubuntu job, an exact .NET 10 SDK, the existing PostgreSQL and ClamAV Testcontainers
+architecture, and step-scoped non-secret values for Docker Compose validation.
 
-Release restore/build/tests, migration list/application, formatting, diff checks,
-NuGet audit, and local PostgreSQL/ClamAV health checks completed successfully.
+Restore, Release build, all 106 tests, formatting verification, NuGet vulnerability
+audit, Docker Compose validation, and diff checks completed successfully locally.
+The workflow was inspected, but its first execution on a GitHub-hosted runner remains
+unverified until the branch is pushed.
 
-Recommended next milestone: `feat/ci-pipeline`.
+Recommended next milestone: `docs/release-hardening`.

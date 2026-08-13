@@ -24,7 +24,7 @@ The primary design rule is:
 | Background processing | ASP.NET Core `BackgroundService` with durable database state |
 | Testing | xUnit, WebApplicationFactory, and Testcontainers |
 | Local infrastructure | Docker Compose |
-| CI | GitHub Actions (planned) |
+| CI | GitHub Actions |
 
 ## Solution Layout
 
@@ -184,8 +184,10 @@ states, durations, and failure codes without filenames or content. Storage remai
 outside static web content, and the host-development ClamAV mapping remains
 loopback-only.
 
-CI remains unimplemented. The completed hardening milestone and recommended next
-milestone are recorded in `CURRENT_TASK.md`.
+GitHub Actions CI restores, builds, runs the full Testcontainers-backed test suite,
+verifies formatting, audits NuGet dependencies, and validates Docker Compose from
+a clean Ubuntu runner. The workflow uses an exact .NET 10 SDK, read-only repository
+permissions, no repository secrets, and ephemeral test-only infrastructure values.
 
 ## Explicit Non-Goals for the Initial Release
 
