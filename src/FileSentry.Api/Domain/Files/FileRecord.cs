@@ -41,4 +41,6 @@ public sealed class FileRecord
     public ScanFailureCode? LastScanFailureCode { get; set; }
 
     public DateTimeOffset CreatedAtUtc { get; set; }
+
+    public DateTimeOffset UpdatedAtUtc { get; set; }
 }

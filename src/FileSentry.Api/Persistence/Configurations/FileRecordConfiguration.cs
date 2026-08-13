@@ -47,6 +47,9 @@ public sealed class FileRecordConfiguration : IEntityTypeConfiguration<FileRecor
             .HasMaxLength(64);
         builder.Property(record => record.CreatedAtUtc)
             .IsRequired();
+        builder.Property(record => record.UpdatedAtUtc)
+            .HasDefaultValueSql("CURRENT_TIMESTAMP")
+            .IsRequired();
 
         builder.HasIndex(record => record.OwnerId);
         builder.HasIndex(record => new { record.Status, record.NextScanAttemptAtUtc });

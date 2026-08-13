@@ -220,6 +220,7 @@ builder.Services.AddSingleton<StoragePathProvider>();
 builder.Services.AddSingleton<FileFormatValidator>();
 builder.Services.AddSingleton<IClamAvClient, ClamAvClient>();
 builder.Services.AddScoped<FileIngestionService>();
+builder.Services.AddScoped<FileAccessService>();
 builder.Services.AddScoped<FileScanWorkflowService>();
 builder.Services.AddScoped<FileScanProcessor>();
 builder.Services.AddHostedService<FileScannerBackgroundService>();

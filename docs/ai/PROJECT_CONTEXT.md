@@ -50,8 +50,9 @@ The exact internal folders may grow with implemented behavior. Clear separation 
 ### API
 
 The API authenticates requests and accepts bounded upload streams into quarantine
-using generated internal identifiers and server-side format validation. Status,
-download, and delete behavior remains planned.
+using generated internal identifiers and server-side format validation. It exposes
+owner-scoped file listing and metadata, streams only conclusively clean content, and
+supports durable logical deletion with stored-byte removal.
 
 ### PostgreSQL
 
@@ -83,14 +84,14 @@ data/
 
 Files use generated internal names. Original names are display metadata only. None of these directories is public static content.
 
-## Planned File States
+## File States
 
 ```text
 PendingScan -> Scanning -> Clean
                         -> Infected
                         -> ScanFailed -> PendingScan (bounded retry)
 
-PendingScan/Clean/Infected/ScanFailed -> Deleted
+PendingScan/Scanning/Clean/Infected/ScanFailed -> Deleted
 ```
 
 Only `Clean` content may be downloaded, and only by its owner. Scanner errors are non-downloadable.
@@ -120,8 +121,8 @@ GET    /health/live
 GET    /health/ready
 ```
 
-The health, authentication, and `POST /files` endpoints are implemented. The
-remaining file endpoints are planned.
+All listed health, authentication, ingestion, owner-scoped metadata, download, and
+delete endpoints are implemented.
 
 ## Security Boundaries
 
@@ -136,16 +137,17 @@ remaining file endpoints are planned.
 
 `ApplicationUser` is implemented with a GUID identifier and Identity-managed
 credentials. `FileRecord` is implemented with authenticated ownership, generated
-storage metadata, SHA-256, detected media type, current scan/storage state, retry
-timing, and scanner result metadata. `ScanAttempt` durably records each claim,
-outcome, failure classification, threat name, and scanner version when available.
+storage metadata, SHA-256, detected media type, current scan/storage state, created
+and updated timestamps, retry timing, and scanner result metadata. `ScanAttempt`
+durably records each claim, outcome, failure classification, threat name, and
+scanner version when available.
 
 Do not implement the remaining entities before their dedicated task:
 
 - `AuditEvent`
 
-The current migrations are `InitialIdentity`, `AddSecureFileIngestion`, and
-`AddDurableClamAvScanning`.
+The current migrations are `InitialIdentity`, `AddSecureFileIngestion`,
+`AddDurableClamAvScanning`, and `AddFileAuthorizationLifecycle`.
 
 ## Current State
 
@@ -162,9 +164,15 @@ safe metadata and remove stored bytes; inconclusive results remain quarantined a
 fail closed with bounded retries. Stale claims are recovered after restarts.
 Integration tests use PostgreSQL 17 and real ClamAV Testcontainers.
 
-File list/metadata/download/delete endpoints and their ownership authorization
-remain unimplemented. The completed scanner milestone and recommended next
-milestone are recorded in `CURRENT_TASK.md`.
+Owner-protected file list, metadata, clean download, and delete endpoints are
+implemented. Ownership is included in database lookups so cross-owner identifiers
+behave like missing records. Downloads use only trusted clean storage and safe
+response metadata. Deletion is coordinated with scanner row locking, removes stored
+bytes, and prevents a completed scan from reviving a deleted record.
+
+Audit events and additional rate-limit/security hardening remain unimplemented. The
+completed access milestone and recommended next milestone are recorded in
+`CURRENT_TASK.md`.
 
 ## Explicit Non-Goals for the Initial Release
 
