@@ -3,9 +3,8 @@
 FileSentry is a secure file-ingestion and malware-scanning API built with ASP.NET
 Core, PostgreSQL, ClamAV, and Docker.
 
-**Status:** The MVP, local release verification, and hosted default-branch CI are
-complete. The remaining pre-tag repository check is recorded in
-`docs/ai/CURRENT_TASK.md`.
+**Status:** The v1.0 MVP and release verification are complete. The first v1.1
+deployment/integration milestone is recorded in `docs/ai/CURRENT_TASK.md`.
 
 **Architecture:** .NET 10 modular monolith with a database-backed scanner worker.
 
@@ -30,7 +29,8 @@ through owner-protected endpoints.
 - registration, login, short-lived JWT bearer tokens, password policy, lockout, and
   per-IP authentication rate limiting;
 - liveness and PostgreSQL/ClamAV readiness checks;
-- Docker Compose for loopback-bound PostgreSQL and ClamAV development dependencies.
+- full Docker Compose stack for the non-root API/worker, migrations, private
+  PostgreSQL/ClamAV dependencies, and persistent upload storage.
 
 ### Secure ingestion
 
@@ -106,6 +106,10 @@ Base path: `/api/v1`.
 | `GET` | `/health/live` | Anonymous | Process liveness |
 | `GET` | `/health/ready` | Anonymous | Process, database, and scanner readiness |
 
+Existing file routes accept either a JWT user or the configured `X-Api-Key` service
+identity. The service remains a normal owner: it cannot use auth-management routes,
+see foreign files, or gain administrative permissions. `/auth/me` is JWT-only.
+
 Errors use ProblemDetails with stable machine-readable codes. Cross-owner file IDs
 do not reveal that a record exists.
 
@@ -151,13 +155,14 @@ grows.
 4. Owner-authorized metadata, download, and delete operations.
 5. Audit, correlation, rate limiting, operational hardening, and CI.
 
-### Current phase: release readiness
+### Current v1.1 phase: containerized API and service authentication
 
-- repeat the full release checklist from a clean worktree/clone;
-- verify migrations and the documented manual API flow;
-- inspect dependency, secret, runtime-artifact, and configuration hygiene;
-- record the successful default-branch hosted CI result and remaining limitations;
-- decide separately whether to tag or publish a release.
+- run the API/worker, migrations, PostgreSQL, ClamAV, and persistent storage as one
+  Compose stack;
+- keep database and scanner ports internal while exposing only the API;
+- add an externally configured owner-scoped service credential without breaking
+  JWT callers;
+- keep SDKs, quotas, retention, cloud storage, and messaging in later milestones.
 
 Local verification results and release blockers are recorded in
 `docs/ai/CURRENT_TASK.md`. No tag or release is created by this milestone.
@@ -203,7 +208,7 @@ A recorded demo video is intentionally outside the release scope. The written
 
 - A ClamAV clean result is not proof that content is harmless.
 - Local storage and the in-process worker target a single application host.
-- ClamAV TCP has no TLS/authentication and is loopback-only in the current topology.
+- ClamAV TCP has no TLS/authentication and is internal-only in the Compose topology.
 - Rate limits are in-process, not distributed.
 - There is no user storage quota, retention worker, public sharing, admin API/UI,
   sandbox execution, content disarm, preview, cloud storage, or message broker.

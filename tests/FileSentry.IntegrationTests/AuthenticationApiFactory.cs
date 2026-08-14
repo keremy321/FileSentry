@@ -3,11 +3,13 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using FileSentry.Api.Persistence;
+using FileSentry.Api.Security;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Testcontainers.PostgreSql;
 
 namespace FileSentry.IntegrationTests;
@@ -24,6 +26,7 @@ public sealed class AuthenticationApiFactory : WebApplicationFactory<Program>, I
         .Build();
     private readonly TcpListener _clamAvListener = new(IPAddress.Loopback, 0);
     private readonly CancellationTokenSource _clamAvCancellationSource = new();
+    private readonly CollectingLoggerProvider _logProvider = new();
     private readonly string _storageRootPath = Path.Combine(
         Path.GetTempPath(),
         $"filesentry-integration-{Guid.NewGuid():N}");
@@ -32,6 +35,7 @@ public sealed class AuthenticationApiFactory : WebApplicationFactory<Program>, I
     public AuthenticationApiFactory()
     {
         SigningKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(48));
+        ServiceApiKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(48));
     }
 
     public string Issuer { get; } = "FileSentry.IntegrationTests";
@@ -39,6 +43,14 @@ public sealed class AuthenticationApiFactory : WebApplicationFactory<Program>, I
     public string Audience { get; } = "FileSentry.IntegrationTests.Client";
 
     public string SigningKey { get; }
+
+    public Guid ServiceId { get; } = Guid.NewGuid();
+
+    public string ServiceName { get; } = "integration-client";
+
+    public string ServiceApiKey { get; }
+
+    public IReadOnlyCollection<string> LogMessages => _logProvider.Messages;
 
     public string StorageRootPath => _storageRootPath;
 
@@ -51,6 +63,7 @@ public sealed class AuthenticationApiFactory : WebApplicationFactory<Program>, I
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+        builder.ConfigureLogging(logging => logging.AddProvider(_logProvider));
         builder.ConfigureAppConfiguration((_, configuration) =>
         {
             configuration.AddInMemoryCollection(new Dictionary<string, string?>
@@ -62,6 +75,10 @@ public sealed class AuthenticationApiFactory : WebApplicationFactory<Program>, I
                 ["Jwt:Audience"] = Audience,
                 ["Jwt:SigningKey"] = SigningKey,
                 ["Jwt:AccessTokenLifetimeMinutes"] = "15",
+                ["ServiceAuthentication:Enabled"] = "true",
+                ["ServiceAuthentication:ServiceId"] = ServiceId.ToString(),
+                ["ServiceAuthentication:ServiceName"] = ServiceName,
+                ["ServiceAuthentication:ApiKey"] = ServiceApiKey,
                 ["AuthenticationRateLimit:PermitLimit"] = "1000",
                 ["AuthenticationRateLimit:WindowSeconds"] = "60",
                 ["UploadRateLimit:PermitLimit"] = "1000",
@@ -81,6 +98,8 @@ public sealed class AuthenticationApiFactory : WebApplicationFactory<Program>, I
         using IServiceScope scope = Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<FileSentryDbContext>();
         await dbContext.Database.MigrateAsync();
+        var provisioner = scope.ServiceProvider.GetRequiredService<ServiceIdentityProvisioner>();
+        await provisioner.EnsureProvisionedAsync(default);
     }
 
     async Task IAsyncLifetime.DisposeAsync()

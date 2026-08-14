@@ -41,6 +41,53 @@ public sealed class StartupValidationTests(AuthenticationApiFactory factory)
             StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("too-short")]
+    public void MissingOrWeakServiceApiKey_FailsStartupClearly(string apiKey)
+    {
+        using WebApplicationFactory<Program> invalidFactory = WithConfiguration(
+            "ServiceAuthentication:ApiKey",
+            apiKey.Length == 0 ? " " : apiKey);
+
+        OptionsValidationException exception = Assert.Throws<OptionsValidationException>(
+            () => _ = invalidFactory.Services);
+
+        Assert.Contains(
+            "ServiceAuthentication:ApiKey must contain at least 32 bytes",
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("ServiceAuthentication:ServiceId", "00000000-0000-0000-0000-000000000000")]
+    [InlineData("ServiceAuthentication:ServiceName", "invalid name")]
+    public void InvalidServiceIdentity_FailsStartupClearly(string key, string value)
+    {
+        using WebApplicationFactory<Program> invalidFactory = WithConfiguration(key, value);
+
+        OptionsValidationException exception = Assert.Throws<OptionsValidationException>(
+            () => _ = invalidFactory.Services);
+
+        Assert.Contains("ServiceAuthentication", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DisabledServiceAuthentication_DoesNotRequireCredentialConfiguration()
+    {
+        using WebApplicationFactory<Program> disabledFactory = factory.WithWebHostBuilder(builder =>
+            builder.ConfigureAppConfiguration((_, configuration) =>
+                configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ServiceAuthentication:Enabled"] = "false",
+                    ["ServiceAuthentication:ServiceId"] = null,
+                    ["ServiceAuthentication:ServiceName"] = null,
+                    ["ServiceAuthentication:ApiKey"] = null
+                })));
+
+        Assert.NotNull(disabledFactory.Services);
+    }
+
     [Fact]
     public void InvalidScannerAttemptLimit_FailsStartupClearly()
     {

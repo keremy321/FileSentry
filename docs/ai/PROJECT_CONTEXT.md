@@ -21,13 +21,13 @@ The primary design rule is:
 | Architecture | Modular monolith |
 | Database | PostgreSQL 17 |
 | Persistence | Entity Framework Core with Npgsql migrations |
-| Authentication | ASP.NET Core Identity and JWT bearer tokens |
+| Authentication | ASP.NET Core Identity/JWT plus owner-scoped `X-Api-Key` service identity |
 | Scanner | Official ClamAV container; clamd TCP protocol |
 | Scan transport | ClamAV `INSTREAM` over bounded streams |
 | Storage | Local temp, quarantine, and clean directories outside the web root |
 | Background processing | ASP.NET Core `BackgroundService` with durable database state |
 | Testing | xUnit, WebApplicationFactory, and Testcontainers |
-| Local infrastructure | Docker Compose for PostgreSQL and ClamAV |
+| Local deployment | Docker Compose for API/worker, migration, PostgreSQL, ClamAV, and persistent storage |
 | CI | GitHub Actions on Ubuntu |
 
 ## Repository layout
@@ -59,10 +59,12 @@ FileSentry/
 
 ### API
 
-The API registers/authenticates callers, accepts bounded upload streams under
-generated storage names, performs format validation, and returns safe metadata. It
-lists owner records, retrieves owner metadata, streams only owner-controlled clean
-content, and coordinates durable deletion.
+The API registers/authenticates JWT users and authenticates a configured service
+identity, accepts bounded upload streams under generated storage names, performs
+format validation, and returns safe metadata. It lists owner records, retrieves
+owner metadata, streams only owner-controlled clean content, and coordinates
+durable deletion. Service callers have file-owner scope only; they cannot use
+registration, login, `/auth/me`, foreign-file, or administrative behavior.
 
 ### PostgreSQL
 
@@ -80,19 +82,23 @@ after a crash.
 ### ClamAV
 
 Health checks use `PING`; scans use `INSTREAM`. No client-controlled storage path is
-sent to the scanner. Compose binds port 3310 to loopback while the API runs on the
-host because clamd TCP has no transport security.
+sent to the scanner, and its container does not receive an application-storage
+mount. ClamAV has no host port mapping and is reachable only on the private Compose
+network because clamd TCP has no transport security.
 
 ### Storage
 
 The configured root resolves outside the web root and contains fixed directories:
 
 ```text
-data/
+<configured-root>/
 |-- temp/
 |-- quarantine/
 `-- clean/
 ```
+
+Compose uses `/var/lib/filesentry` as the configured root and mounts each child as
+a persistent named volume with private application ownership.
 
 Files use generated internal names. Original names are sanitized display metadata.
 No upload directory is static web content.
@@ -157,8 +163,9 @@ The checked-in migrations are:
 4. `AddFileAuthorizationLifecycle`;
 5. `AddSecurityAuditEvents`.
 
-The API does not auto-migrate; clean-clone setup explicitly runs `dotnet ef database
-update`.
+The API does not opportunistically auto-migrate. Compose runs the same application
+image once with `--migrate`, applies checked-in migrations, and provisions the
+configured stable passwordless service owner before starting the API.
 
 ## Security decisions
 
@@ -171,12 +178,15 @@ update`.
 7. Audit and structured logging fields exclude bytes, filenames in free-form logs,
    tokens, passwords, keys, database secrets, and raw malware.
 8. Security-critical options validate at startup.
+9. A supplied Bearer header takes precedence over an API key, and service-key
+   comparison uses fixed-time digest comparison with generic failures.
 
 ## Current verified state
 
-The MVP implements infrastructure health, Identity/JWT authentication, secure
-ingestion, durable ClamAV scanning and recovery, owner-protected file lifecycle,
-auditing/correlation/rate limiting, adversarial tests, and GitHub Actions CI.
+The v1.0 MVP plus the first v1.1 milestone implement infrastructure health,
+Identity/JWT and service authentication, secure ingestion, durable ClamAV scanning
+and recovery, owner-protected file lifecycle, auditing/correlation/rate limiting,
+an all-container Compose topology, adversarial tests, and GitHub Actions CI.
 
 Integration tests use disposable PostgreSQL 17 and real ClamAV Testcontainers. The
 final local gate passed from an isolated clone: a zero-warning Release build, 31
@@ -187,16 +197,19 @@ also passed. Local development uses an ignored `deploy/.env` for Compose and .NE
 User Secrets (or equivalent external configuration) for the database connection
 string and JWT signing key.
 
-Release documentation now lives in the README plus focused architecture, threat
-model, demo, and project-plan files. GitHub Actions has passed on merged `main`.
-A recorded demo video is intentionally outside project scope; `docs/demo.md` remains
-the repeatable written guide. Remote repository description/topics remain
-unverified, and no tag or GitHub release has been created.
+The container image is multi-stage, Release-published, and runs as non-root. Compose
+publishes only the API on loopback by default; PostgreSQL, ClamAV, and named upload
+volumes remain private to the stack. Secrets are supplied externally through the
+ignored `deploy/.env` for local use or an operational secret provider. GitHub
+Actions validates Compose and builds the API image in addition to the existing
+solution gates. The v1.1 workflow change is locally validated but has not yet run on
+a hosted runner because this task does not commit or push.
 
 ## Limitations and explicit non-goals
 
 - A clean antivirus result is not proof that a file is harmless.
-- Local storage and the in-process worker target a single host.
+- Local named-volume storage, one configured service identity, and the in-process
+  worker target a single Compose host.
 - There is no frontend, public sharing, admin API/UI, cloud storage, message broker,
   multi-engine scanning, sandbox execution, content disarm, OCR, document preview,
   Kubernetes, or distributed rate limiting.

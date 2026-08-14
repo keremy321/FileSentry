@@ -12,8 +12,8 @@ arbitrary documents safe.
 
 ## Trust boundaries
 
-1. **Client to API:** headers, filenames, MIME claims, identifiers, multipart shape,
-   and bytes are attacker-controlled.
+1. **Client to API:** JWTs, service-key headers, filenames, MIME claims,
+   identifiers, multipart shape, and bytes are attacker-controlled.
 2. **API to storage:** only fixed roots and generated internal names may cross this
    boundary.
 3. **Quarantine to scanner:** valid-format content remains untrusted.
@@ -38,11 +38,12 @@ arbitrary documents safe.
 | Crash while scanning | Durable claims/attempts and stale `Scanning` recovery | Single-host storage remains an availability dependency |
 | IDOR/cross-user access | Owner ID is included in list/get/download/delete database predicates; foreign IDs behave as missing | Compromise of a user's token grants that user's permissions until expiry |
 | Credential guessing | Identity password policy, lockout, generic login errors, per-IP auth limiter | In-process rate limits are not shared across multiple instances |
+| Service credential theft or confusion | Externally configured strong key, fixed-time comparison, generic failures, Bearer precedence, reserved passwordless owner, and owner-scoped file permissions only | A stolen service key grants access to that service identity's files until rotation |
 | Upload flooding | Per-authenticated-user fixed-window limiter | No storage quota or distributed rate limit exists |
 | Sensitive logs or audit records | Structured controlled fields; no bytes, tokens, passwords, keys, or arbitrary metadata | Operators must preserve secure logging configuration and database access controls |
 | Audit loss | Audit writes participate in security-relevant persistence and fail safely | Database unavailability also blocks the associated operation |
 | Direct file exposure | Storage outside web root; no static-file mapping; authorized API streaming only | Host filesystem permissions and backups must be secured operationally |
-| ClamAV network exposure | Port 3310 bound to `127.0.0.1` for host development | TCP has no TLS/authentication and must never be publicly exposed |
+| ClamAV network exposure | No host port mapping; clamd is reachable only from the private Compose network | TCP has no TLS/authentication and must never be publicly exposed |
 
 ## File policy
 

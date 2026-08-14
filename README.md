@@ -8,8 +8,8 @@ ClamAV, and exposes only conclusively clean files to their owner.
 > successfully.
 
 The implemented MVP uses .NET 10, PostgreSQL 17, Entity Framework Core, ASP.NET
-Core Identity, JWT bearer authentication, local protected storage, a durable
-background scanner, Docker Compose, and GitHub Actions.
+Core Identity, JWT bearer and service API-key authentication, protected persistent
+storage, a durable background scanner, Docker Compose, and GitHub Actions.
 
 ## Security model
 
@@ -39,21 +39,22 @@ FileSentry is a modular monolith. The API and scanner worker run in the same ASP
 Core process; PostgreSQL is the durable workflow source of truth.
 
 ```text
-Authenticated client
-        |
-        v
+JWT user or API-key service
+             |
+             v
 ASP.NET Core API + scanner BackgroundService
     |           |                 |
     v           v                 v
-PostgreSQL   protected storage   ClamAV INSTREAM
+PostgreSQL   persistent storage  ClamAV INSTREAM
              temp/quarantine/
                   clean
 ```
 
-Docker Compose currently starts PostgreSQL and ClamAV. The API runs on the host,
-which is why both dependency ports are bound to `127.0.0.1`. ClamAV port 3310 is
-unencrypted and unauthenticated; never expose it beyond loopback. Remove its host
-mapping if the API is later containerized on the same private Docker network.
+Docker Compose runs the API/worker, a one-shot migration service, PostgreSQL, and
+ClamAV on one private network. Only the API is published, on `127.0.0.1:8080` by
+default. PostgreSQL and ClamAV are addressed by service name and have no host port
+mapping. ClamAV port 3310 is unencrypted and unauthenticated and must remain
+internal.
 
 ## Prerequisites
 
@@ -67,83 +68,93 @@ and ClamAV instances.
 
 ## Clean-clone setup
 
-### 1. Create local infrastructure configuration
+### 1. Create local configuration
 
-Copy the placeholder file and replace only the local PostgreSQL password:
+Copy the placeholder file:
 
 ```powershell
 Copy-Item deploy/.env.example deploy/.env
 ```
 
-`deploy/.env` is ignored by Git. Keep the database name, user, and ports aligned
-with the connection string configured in the next step.
-
-### 2. Start PostgreSQL and ClamAV
+`deploy/.env` is ignored by Git. Replace every `replace-with-...` value. The JWT
+signing key and service API key must each contain at least 32 random bytes; use
+different values. Generate suitable values and a stable service identity, for
+example:
 
 ```powershell
-docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d
-docker compose --env-file deploy/.env -f deploy/docker-compose.yml ps
+$randomBytes = [byte[]]::new(48)
+[Security.Cryptography.RandomNumberGenerator]::Fill($randomBytes)
+[Convert]::ToBase64String($randomBytes)
+New-Guid
 ```
 
-The first ClamAV start may take several minutes while signatures initialize. Follow
-its logs if needed:
+Put the generated GUID in `FILESENTRY_SERVICE_ID`. Keep it stable across restarts
+and API-key rotations because it is the service's persisted file-owner ID. Never
+commit `deploy/.env` or use the example placeholders as real credentials.
+
+### 2. Build and start the complete stack
+
+```powershell
+docker compose --env-file deploy/.env -f deploy/docker-compose.yml up --detach --build
+docker compose --env-file deploy/.env -f deploy/docker-compose.yml ps --all
+```
+
+The `migrate` service applies all checked-in EF migrations and provisions the
+configured passwordless service identity before the API starts. It should show
+`Exited (0)` while `api`, `postgresql`, and `clamav` become healthy. The first
+ClamAV start may take several minutes while signatures initialize. Follow logs if
+needed:
 
 ```powershell
 docker compose --env-file deploy/.env -f deploy/docker-compose.yml logs -f clamav
 ```
 
-Stop the dependencies without deleting their named volumes with:
+The API is available at `http://127.0.0.1:8080`. Change
+`FILESENTRY_API_BIND_ADDRESS` only when deliberate network exposure is protected by
+appropriate TLS and network controls. PostgreSQL and ClamAV remain unexposed.
+
+### 3. Migration and storage behavior
+
+The normal `up` command runs migrations once through the `migrate` service. To
+apply new checked-in migrations explicitly after an update:
+
+```powershell
+docker compose --env-file deploy/.env -f deploy/docker-compose.yml run --rm migrate
+```
+
+The API process does not migrate opportunistically. Temp, quarantine, clean,
+PostgreSQL, and ClamAV signature data use separate named volumes. Upload storage is
+mounted only into the API/migration containers, never into ClamAV.
+
+### 4. Stop the stack
+
+Stop containers without deleting persisted data:
 
 ```powershell
 docker compose --env-file deploy/.env -f deploy/docker-compose.yml down
 ```
 
-### 3. Configure API secrets
+Deleting named volumes is intentionally separate and destroys database and stored
+file state. Production deployments should inject secrets from a managed secret
+store rather than treating a local `.env` file as secret management.
 
-The application deliberately has no checked-in database password or JWT key. Set
-both through the API project's .NET User Secrets store:
-
-```powershell
-dotnet user-secrets --project src/FileSentry.Api set "ConnectionStrings:PostgreSql" "Host=127.0.0.1;Port=5432;Database=filesentry;Username=filesentry;Password=<same-password-as-deploy-env>"
-dotnet user-secrets --project src/FileSentry.Api set "Jwt:SigningKey" "<generate-a-random-secret-containing-at-least-32-bytes>"
-```
-
-Do not use the literal placeholders. Equivalent environment variables are
-`ConnectionStrings__PostgreSql` and `Jwt__SigningKey`. Other validated defaults are
-in `src/FileSentry.Api/appsettings.json`, including:
+Other validated defaults are in `src/FileSentry.Api/appsettings.json`, including:
 
 - ClamAV host, ports, timeouts, and stream limit;
 - three bounded scan attempts with exponential backoff and stale-job recovery;
 - authentication and upload fixed-window limits;
 - the storage root, resolved outside the API web root.
 
-Invalid security-critical configuration causes startup to fail clearly.
-
-### 4. Restore tools and apply migrations
-
-```powershell
-dotnet tool restore
-dotnet restore FileSentry.slnx
-dotnet ef database update --project src/FileSentry.Api
-```
-
-The API does not silently create or migrate the database at startup. Applying the
-checked-in EF Core migrations is an explicit setup step.
-
-### 5. Run the API
-
-```powershell
-dotnet run --project src/FileSentry.Api --launch-profile http
-```
-
-The development HTTP profile listens at `http://localhost:5029`. Development
-OpenAPI JSON is available at `http://localhost:5029/openapi/v1.json`.
+Invalid database, JWT, service-authentication, scanner, storage, or rate-limit
+configuration causes startup to fail clearly. Service authentication is disabled
+by default outside Compose and requires a non-empty GUID, a controlled service
+name, and a key of at least 32 bytes when enabled.
 
 ## Health checks
 
 ```powershell
-Invoke-WebRequest http://localhost:5029/health/live
-Invoke-WebRequest http://localhost:5029/health/ready
+Invoke-WebRequest http://127.0.0.1:8080/health/live
+Invoke-WebRequest http://127.0.0.1:8080/health/ready
 ```
 
 - `GET /health/live` checks that the process is running.
@@ -159,7 +170,7 @@ authorization header. The password policy requires at least 12 characters with
 uppercase, lowercase, numeric, and non-alphanumeric characters.
 
 ```powershell
-$baseUrl = 'http://localhost:5029'
+$baseUrl = 'http://127.0.0.1:8080'
 $credentials = @{
     email = 'user@example.test'
     password = '<choose-a-valid-local-password>'
@@ -178,6 +189,28 @@ Invoke-RestMethod -Headers $headers -Uri "$baseUrl/api/v1/auth/me"
 Registration returns `201 Created`; login returns a short-lived bearer token.
 Authentication endpoints are rate-limited per client IP. Do not log or persist the
 token outside a suitable secret store.
+
+### Service authentication
+
+Trusted backend clients can use the configured service credential on existing file
+routes without registering or storing a username/password:
+
+```powershell
+$serviceHeaders = @{ 'X-Api-Key' = '<value-from-FILESENTRY_SERVICE_API_KEY>' }
+Invoke-RestMethod -Headers $serviceHeaders -Uri "$baseUrl/api/v1/files"
+```
+
+The service may upload, list, read metadata, download clean owned files, and delete
+owned files. It has the same owner predicates and upload rate limit as a JWT user;
+it cannot access another user's files, authentication management routes, or
+administrative capabilities. `/api/v1/auth/me` remains JWT-only. If a request
+contains both a Bearer header and `X-Api-Key`, the Bearer credential is authoritative
+and an invalid JWT cannot fall back to the service key.
+
+The migration service creates a reserved passwordless Identity row for the stable
+service ID. Rotating `FILESENTRY_SERVICE_API_KEY` and recreating the API preserves
+ownership as long as `FILESENTRY_SERVICE_ID` is unchanged. The key is external
+configuration: it is not persisted, returned, or intentionally logged.
 
 ### Upload and scan workflow
 
@@ -266,8 +299,8 @@ dotnet restore FileSentry.slnx
 dotnet build FileSentry.slnx --configuration Release
 dotnet test FileSentry.slnx --configuration Release
 dotnet format FileSentry.slnx --verify-no-changes
-dotnet ef migrations list --project src/FileSentry.Api
 docker compose --env-file deploy/.env -f deploy/docker-compose.yml config --quiet
+docker compose --env-file deploy/.env -f deploy/docker-compose.yml run --rm migrate
 dotnet package list --project FileSentry.slnx --vulnerable --include-transitive
 ```
 
@@ -280,8 +313,9 @@ sample.
 
 `.github/workflows/ci.yml` runs on pull requests and pushes to `main`. Its
 least-privilege Ubuntu job installs the exact SDK, restores, validates Compose,
-pre-pulls the existing Testcontainers images, builds in Release, runs the complete
-test suite, verifies formatting, and audits direct and transitive NuGet packages.
+pre-pulls the existing Testcontainers images, builds in Release, builds the API
+container image, runs the complete test suite, verifies formatting, and audits
+direct and transitive NuGet packages.
 
 CI uses runtime-generated Testcontainers credentials and step-scoped Compose
 placeholders. It requires no repository secrets or developer User Secrets. The
@@ -296,9 +330,9 @@ content can remain undetected.
 
 Additional MVP limitations:
 
-- local storage and the in-process worker target one application host;
-- ClamAV TCP has no transport security and is safe here only because it is bound to
-  loopback;
+- local named-volume storage and the in-process worker target one Compose host;
+- ClamAV TCP has no transport security and is safe here only because it has no host
+  port mapping and remains on the private Compose network;
 - there is no content disarm, sandbox execution, document preview, storage quota,
   retention worker, public sharing, admin UI/API, or multi-engine scanning;
 - there is no distributed rate limiter, message broker, cloud storage, or
