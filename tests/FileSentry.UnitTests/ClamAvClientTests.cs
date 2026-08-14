@@ -199,26 +199,36 @@ public sealed class ClamAvClientTests
         var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         int port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        Task serverTask = Task.Run(async () =>
+        Task serverTask = RunServerAsync();
+
+        async Task RunServerAsync()
         {
+            Task<TcpClient>? versionAcceptTask = null;
             using (TcpClient scanClient = await listener.AcceptTcpClientAsync())
             await using (NetworkStream stream = scanClient.GetStream())
             {
                 byte[] received = await ReadInStreamContentAsync(stream);
                 onContent?.Invoke(received);
+                if (versionResponse is not null)
+                {
+                    // The client opens VERSION immediately after reading the scan response.
+                    versionAcceptTask = listener.AcceptTcpClientAsync();
+                }
+
                 await stream.WriteAsync(Encoding.ASCII.GetBytes(scanResponse));
             }
 
-            if (versionResponse is not null)
+            if (versionResponse is not null && versionAcceptTask is not null)
             {
-                using TcpClient versionClient = await listener.AcceptTcpClientAsync();
+                using TcpClient versionClient = await versionAcceptTask;
                 await using NetworkStream stream = versionClient.GetStream();
                 byte[] command = new byte[VersionCommand.Length];
                 await stream.ReadExactlyAsync(command);
                 Assert.Equal(VersionCommand, command);
                 await stream.WriteAsync(Encoding.ASCII.GetBytes(versionResponse));
             }
-        });
+        }
+
         var client = new ClamAvClient(Options.Create(CreateOptions(port)));
 
         ClamAvScanResult result = await client.ScanAsync(

@@ -188,10 +188,10 @@ User Secrets (or equivalent external configuration) for the database connection
 string and JWT signing key.
 
 Release documentation now lives in the README plus focused architecture, threat
-model, demo, and project-plan files. The current hosted CI result and remote
-description/topics were not observable during final verification, and the required
-demo video is not linked. These are release blockers; no tag or GitHub release was
-created.
+model, demo, and project-plan files. GitHub Actions has passed on merged `main`.
+A recorded demo video is intentionally outside project scope; `docs/demo.md` remains
+the repeatable written guide. Remote repository description/topics remain
+unverified, and no tag or GitHub release has been created.
 
 ## Limitations and explicit non-goals
 
