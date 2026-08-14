@@ -6,8 +6,10 @@
     <Nullable>enable</Nullable>
     <PackageId>FileSentry.Client</PackageId>
     <Version>1.1.0-preview.1</Version>
+    <Title>FileSentry.Client</Title>
     <Authors>FileSentry Contributors</Authors>
     <Description>Streaming .NET client for the FileSentry secure file-ingestion API.</Description>
+    <Copyright>Copyright (c) 2026 FileSentry contributors</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/keremy321/FileSentry</PackageProjectUrl>
     <RepositoryUrl>https://github.com/keremy321/FileSentry.git</RepositoryUrl>
@@ -15,7 +17,14 @@
     <PackageTags>filesentry;security;file-upload;malware-scanning</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PackageReleaseNotes>First public preview of the streaming FileSentry C# client.</PackageReleaseNotes>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
   <ItemGroup>

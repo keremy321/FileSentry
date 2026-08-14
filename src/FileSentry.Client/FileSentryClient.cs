@@ -6,6 +6,7 @@ using FileSentry.Client.Internal;
 
 namespace FileSentry.Client;
 
+/// <summary>Provides streaming access to the service-authenticated FileSentry API.</summary>
 public sealed class FileSentryClient : IFileSentryClient, IDisposable
 {
     private const string ApiKeyHeaderName = "X-Api-Key";
@@ -22,6 +23,8 @@ public sealed class FileSentryClient : IFileSentryClient, IDisposable
     private readonly TimeSpan _scanTimeout;
     private bool _disposed;
 
+    /// <summary>Creates a client that owns an internal redirect-disabled HTTP client.</summary>
+    /// <param name="options">Validated API and polling configuration.</param>
     public FileSentryClient(FileSentryClientOptions options)
         : this(
             new HttpClient(new HttpClientHandler
@@ -33,6 +36,12 @@ public sealed class FileSentryClient : IFileSentryClient, IDisposable
     {
     }
 
+    /// <summary>Creates a client using a caller-owned HTTP client.</summary>
+    /// <param name="httpClient">
+    /// The caller-owned HTTP client. Its default headers are not modified and it is
+    /// not disposed with this instance.
+    /// </param>
+    /// <param name="options">Validated API and polling configuration.</param>
     public FileSentryClient(HttpClient httpClient, FileSentryClientOptions options)
         : this(httpClient, options, ownsHttpClient: false)
     {
@@ -54,6 +63,7 @@ public sealed class FileSentryClient : IFileSentryClient, IDisposable
         _scanTimeout = validatedOptions.ScanTimeout;
     }
 
+    /// <inheritdoc />
     public async Task<FileUpload> UploadAsync(
         Stream content,
         string fileName,
@@ -95,6 +105,7 @@ public sealed class FileSentryClient : IFileSentryClient, IDisposable
         return MapUpload(wireModel);
     }
 
+    /// <inheritdoc />
     public async Task<FileMetadata> GetFileAsync(
         Guid fileId,
         CancellationToken cancellationToken = default)
@@ -114,6 +125,7 @@ public sealed class FileSentryClient : IFileSentryClient, IDisposable
         return MapMetadata(wireModel);
     }
 
+    /// <inheritdoc />
     public async Task<IReadOnlyList<FileMetadata>> ListFilesAsync(
         CancellationToken cancellationToken = default)
     {
@@ -134,6 +146,7 @@ public sealed class FileSentryClient : IFileSentryClient, IDisposable
             : MapMetadata(model)).ToArray();
     }
 
+    /// <inheritdoc />
     public async Task<FileMetadata> WaitForScanAsync(
         Guid fileId,
         CancellationToken cancellationToken = default)
@@ -167,6 +180,7 @@ public sealed class FileSentryClient : IFileSentryClient, IDisposable
         }
     }
 
+    /// <inheritdoc />
     public async Task<Stream> DownloadAsync(
         Guid fileId,
         CancellationToken cancellationToken = default)
@@ -195,6 +209,7 @@ public sealed class FileSentryClient : IFileSentryClient, IDisposable
         }
     }
 
+    /// <inheritdoc />
     public async Task DeleteAsync(
         Guid fileId,
         CancellationToken cancellationToken = default)
@@ -210,6 +225,7 @@ public sealed class FileSentryClient : IFileSentryClient, IDisposable
             .ConfigureAwait(false);
     }
 
+    /// <summary>Disposes the internally created HTTP client, when present.</summary>
     public void Dispose()
     {
         if (_disposed)

@@ -2,16 +2,26 @@ using System.Text;
 
 namespace FileSentry.Client;
 
+/// <summary>Configures FileSentry API access and scan-status polling.</summary>
 public sealed class FileSentryClientOptions
 {
+    /// <summary>
+    /// Gets the absolute HTTP or HTTPS API base address without credentials, query,
+    /// or fragment.
+    /// </summary>
     public required Uri BaseAddress { get; init; }
 
+    /// <summary>Gets the service API key sent in the <c>X-Api-Key</c> header.</summary>
     public required string ApiKey { get; init; }
 
+    /// <summary>Gets the delay between scan-status requests.</summary>
     public TimeSpan PollingInterval { get; init; } = TimeSpan.FromSeconds(1);
 
+    /// <summary>Gets the maximum duration of a single scan-status polling operation.</summary>
     public TimeSpan ScanTimeout { get; init; } = TimeSpan.FromMinutes(5);
 
+    /// <summary>Validates all options without creating an HTTP client.</summary>
+    /// <exception cref="ArgumentException">An option is missing or invalid.</exception>
     public void Validate() => _ = ValidateAndNormalize();
 
     internal ValidatedFileSentryClientOptions ValidateAndNormalize()
