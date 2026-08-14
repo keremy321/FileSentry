@@ -179,14 +179,19 @@ ingestion, durable ClamAV scanning and recovery, owner-protected file lifecycle,
 auditing/correlation/rate limiting, adversarial tests, and GitHub Actions CI.
 
 Integration tests use disposable PostgreSQL 17 and real ClamAV Testcontainers. The
-hosted CI has been observed passing from a clean checkout without User Secrets or
-repository secrets. Local development uses an ignored `deploy/.env` for Compose and
-.NET User Secrets (or equivalent external configuration) for the database
-connection string and JWT signing key.
+final local gate passed from an isolated clone: a zero-warning Release build, 31
+unit tests, 75 integration tests, formatting, migrations, Compose validation, and
+the NuGet vulnerability audit all succeeded. Live clean, EICAR-infected,
+retry-exhausted scanner-outage, ownership, audit/correlation, and rate-limit flows
+also passed. Local development uses an ignored `deploy/.env` for Compose and .NET
+User Secrets (or equivalent external configuration) for the database connection
+string and JWT signing key.
 
 Release documentation now lives in the README plus focused architecture, threat
-model, demo, and project-plan files. No tag or GitHub release is part of this
-milestone.
+model, demo, and project-plan files. The current hosted CI result and remote
+description/topics were not observable during final verification, and the required
+demo video is not linked. These are release blockers; no tag or GitHub release was
+created.
 
 ## Limitations and explicit non-goals
 
