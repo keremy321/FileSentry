@@ -3,9 +3,9 @@
 FileSentry is a secure file-ingestion and malware-scanning API built with ASP.NET
 Core, PostgreSQL, ClamAV, and Docker.
 
-**Status:** MVP behavior, security hardening, automated tests, and GitHub Actions CI
-are implemented. Final local verification is complete; release blockers are recorded
-in `docs/ai/CURRENT_TASK.md`.
+**Status:** The MVP, local release verification, and hosted default-branch CI are
+complete. The remaining pre-tag repository check is recorded in
+`docs/ai/CURRENT_TASK.md`.
 
 **Architecture:** .NET 10 modular monolith with a database-backed scanner worker.
 
@@ -151,12 +151,12 @@ grows.
 4. Owner-authorized metadata, download, and delete operations.
 5. Audit, correlation, rate limiting, operational hardening, and CI.
 
-### Current phase: final verification
+### Current phase: release readiness
 
 - repeat the full release checklist from a clean worktree/clone;
 - verify migrations and the documented manual API flow;
 - inspect dependency, secret, runtime-artifact, and configuration hygiene;
-- confirm the default-branch hosted CI result and record remaining limitations;
+- record the successful default-branch hosted CI result and remaining limitations;
 - decide separately whether to tag or publish a release.
 
 Local verification results and release blockers are recorded in
@@ -169,8 +169,8 @@ Local verification results and release blockers are recorded in
 - [x] Clean and infected content follows the correct storage lifecycle.
 - [x] Metadata, download, and delete enforce owner predicates.
 - [x] Audit, correlation, and focused rate limits are implemented.
-- [ ] The current default-branch GitHub Actions run is independently observed green;
-  the secret-free workflow is present and the complete suite passes locally.
+- [x] The default-branch GitHub Actions run is observed green; the secret-free
+  workflow and complete local suite pass.
 - [x] Storage, `.env`, User Secrets, build output, and malware samples are excluded
   from source control.
 - [x] MIT license is present.
@@ -182,20 +182,22 @@ Local verification results and release blockers are recorded in
 These requirements are retained for final verification; an item is not complete
 merely because an implementation or document claims it is.
 
-- [ ] Core acceptance criteria pass.
-- [ ] Release build succeeds without warnings selected as errors.
-- [ ] Unit and integration test results are recorded.
-- [ ] GitHub Actions is green on the default branch.
-- [ ] Docker images run as non-root where feasible.
-- [ ] ClamAV is internal-only.
-- [ ] Database migrations are reproducible.
-- [ ] `.env.example` and configuration documentation are complete.
-- [ ] Threat model reflects the implemented behavior.
-- [ ] README includes architecture, setup, API examples, security controls, and
+- [x] Core acceptance criteria pass.
+- [x] Release build succeeds without warnings selected as errors.
+- [x] Unit and integration test results are recorded.
+- [x] GitHub Actions is green on the default branch.
+- [x] Docker images run as non-root where feasible.
+- [x] ClamAV is internal-only.
+- [x] Database migrations are reproducible.
+- [x] `.env.example` and configuration documentation are complete.
+- [x] Threat model reflects the implemented behavior.
+- [x] README includes architecture, setup, API examples, security controls, and
   limitations.
 - [ ] Repository has a license, description, and relevant GitHub topics.
-- [ ] Demo video is linked.
 - [ ] Tagged release is created.
+
+A recorded demo video is intentionally outside the release scope. The written
+[`demo.md`](demo.md) guide remains the repeatable demonstration artifact.
 
 ## Limitations
 
