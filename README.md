@@ -274,6 +274,42 @@ A non-clean download returns `409` with code `FILE_NOT_CLEAN`. Missing and
 cross-owner IDs return the same `404 FILE_NOT_FOUND` response. Errors use
 `application/problem+json` with a stable `code` extension.
 
+## C# client SDK
+
+The pack-ready [.NET client](src/FileSentry.Client/README.md) wraps the existing
+service-authenticated `/api/v1/files` contract. It is currently versioned
+`1.1.0-preview.1` for development and has not been published to NuGet.
+
+```csharp
+using FileSentry.Client;
+
+using var client = new FileSentryClient(new FileSentryClientOptions
+{
+    BaseAddress = new Uri("https://filesentry.example/"),
+    ApiKey = configuration["FileSentry:ApiKey"]!,
+    PollingInterval = TimeSpan.FromSeconds(1),
+    ScanTimeout = TimeSpan.FromMinutes(5)
+});
+
+await using Stream uploadContent = File.OpenRead("cv.pdf");
+FileUpload upload = await client.UploadAsync(uploadContent, "cv.pdf", cancellationToken);
+FileMetadata result = await client.WaitForScanAsync(upload.FileId, cancellationToken);
+
+if (result.Status == FileStatus.Clean)
+{
+    await using Stream clean = await client.DownloadAsync(
+        upload.FileId,
+        cancellationToken);
+    // Consume the stream while still treating its content as potentially risky.
+}
+```
+
+Use the sequence `Upload -> Wait for terminal scan status -> continue only if Clean
+-> Download`. `Infected`, `ScanFailed`, and `Deleted` stop polling without becoming
+successful. Unknown or malformed states fail safely. Uploads are not retried
+automatically, and API ProblemDetails are available through typed, credential-
+redacted SDK exceptions.
+
 ## Audit, correlation, and rate limiting
 
 - Every request receives an `X-Correlation-ID`. A valid caller value is reused;
@@ -314,8 +350,8 @@ sample.
 `.github/workflows/ci.yml` runs on pull requests and pushes to `main`. Its
 least-privilege Ubuntu job installs the exact SDK, restores, validates Compose,
 pre-pulls the existing Testcontainers images, builds in Release, builds the API
-container image, runs the complete test suite, verifies formatting, and audits
-direct and transitive NuGet packages.
+container image, runs the complete test suite, validates the unpublished client
+package, verifies formatting, and audits direct and transitive NuGet packages.
 
 CI uses runtime-generated Testcontainers credentials and step-scoped Compose
 placeholders. It requires no repository secrets or developer User Secrets. The

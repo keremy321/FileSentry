@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackageId>FileSentry.Client</PackageId>
+    <Version>1.1.0-preview.1</Version>
+    <Authors>FileSentry Contributors</Authors>
+    <Description>Streaming .NET client for the FileSentry secure file-ingestion API.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/keremy321/FileSentry</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/keremy321/FileSentry.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>filesentry;security;file-upload;malware-scanning</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

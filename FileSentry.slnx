@@ -4,4 +4,5 @@
     <Project Path="tests/FileSentry.UnitTests/FileSentry.UnitTests.csproj" />
   </Folder>
   <Project Path="src/FileSentry.Api/FileSentry.Api.csproj" />
+  <Project Path="src/FileSentry.Client/FileSentry.Client.csproj" />
 </Solution>

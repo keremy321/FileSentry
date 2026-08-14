@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\FileSentry.Api\FileSentry.Api.csproj" />
+    <ProjectReference Include="..\..\src\FileSentry.Client\FileSentry.Client.csproj" />
   </ItemGroup>
 
 </Project>

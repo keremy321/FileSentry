@@ -155,14 +155,14 @@ grows.
 4. Owner-authorized metadata, download, and delete operations.
 5. Audit, correlation, rate limiting, operational hardening, and CI.
 
-### Current v1.1 phase: containerized API and service authentication
+### Current v1.1 phase: C# client SDK foundation
 
-- run the API/worker, migrations, PostgreSQL, ClamAV, and persistent storage as one
-  Compose stack;
-- keep database and scanner ports internal while exposing only the API;
-- add an externally configured owner-scoped service credential without breaking
-  JWT callers;
-- keep SDKs, quotas, retention, cloud storage, and messaging in later milestones.
+- provide a pack-ready .NET 10 client for service-authenticated upload, metadata,
+  list, scan polling, clean download, and delete;
+- stream file content and preserve typed ProblemDetails without exposing the key;
+- stop polling safely on clean and non-clean terminal states;
+- keep NuGet publishing, Python SDK, webhooks, quotas, retention, cloud storage,
+  and messaging in later milestones.
 
 Local verification results and release blockers are recorded in
 `docs/ai/CURRENT_TASK.md`. No tag or release is created by this milestone.
