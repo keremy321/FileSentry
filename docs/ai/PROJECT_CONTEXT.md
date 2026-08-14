@@ -18,6 +18,7 @@ The primary design rule is:
 |---|---|
 | Runtime | .NET 10, exact SDK pinned in `global.json` |
 | API | ASP.NET Core controllers with development OpenAPI |
+| C# client | Pack-ready .NET 10 `FileSentry.Client` library using service API-key authentication |
 | Architecture | Modular monolith |
 | Database | PostgreSQL 17 |
 | Persistence | Entity Framework Core with Npgsql migrations |
@@ -45,6 +46,7 @@ FileSentry/
 |   |-- PROJECT_PLAN.md
 |   `-- threat-model.md
 |-- src/FileSentry.Api/
+|-- src/FileSentry.Client/
 |-- tests/
 |   |-- FileSentry.UnitTests/
 |   `-- FileSentry.IntegrationTests/
@@ -65,6 +67,15 @@ format validation, and returns safe metadata. It lists owner records, retrieves
 owner metadata, streams only owner-controlled clean content, and coordinates
 durable deletion. Service callers have file-owner scope only; they cannot use
 registration, login, `/auth/me`, foreign-file, or administrative behavior.
+
+### C# client
+
+`FileSentry.Client` wraps the existing file routes with streaming async methods for
+upload, metadata/list, bounded status polling, clean download, and delete. It adds
+the service key to individual requests rather than shared default headers. It
+returns typed file/status models and bounded, credential-redacted ProblemDetails
+exceptions. The server remains authoritative for format validation, hashing,
+ownership, scanning, and download permission.
 
 ### PostgreSQL
 
@@ -183,15 +194,16 @@ configured stable passwordless service owner before starting the API.
 
 ## Current verified state
 
-The v1.0 MVP plus the first v1.1 milestone implement infrastructure health,
+The v1.0 MVP plus the first two v1.1 milestones implement infrastructure health,
 Identity/JWT and service authentication, secure ingestion, durable ClamAV scanning
 and recovery, owner-protected file lifecycle, auditing/correlation/rate limiting,
-an all-container Compose topology, adversarial tests, and GitHub Actions CI.
+an all-container Compose topology, a pack-ready .NET client SDK, adversarial tests,
+and GitHub Actions CI.
 
 Integration tests use disposable PostgreSQL 17 and real ClamAV Testcontainers. The
-final local gate passed from an isolated clone: a zero-warning Release build, 31
-unit tests, 75 integration tests, formatting, migrations, Compose validation, and
-the NuGet vulnerability audit all succeeded. Live clean, EICAR-infected,
+final v1.0 local gate passed from an isolated clone with a zero-warning Release
+build, the complete test suite, formatting, migrations, Compose validation, and the
+NuGet vulnerability audit. Live clean, EICAR-infected,
 retry-exhausted scanner-outage, ownership, audit/correlation, and rate-limit flows
 also passed. Local development uses an ignored `deploy/.env` for Compose and .NET
 User Secrets (or equivalent external configuration) for the database connection
@@ -204,6 +216,11 @@ ignored `deploy/.env` for local use or an operational secret provider. GitHub
 Actions validates Compose and builds the API image in addition to the existing
 solution gates. The v1.1 workflow change is locally validated but has not yet run on
 a hosted runner because this task does not commit or push.
+
+The SDK is versioned `1.1.0-preview.1` and intentionally remains unpublished. Its
+safe consumer workflow is upload, wait for a terminal scan status, continue only on
+`Clean`, then stream the download. A clean result reduces risk but is not a safety
+guarantee.
 
 ## Limitations and explicit non-goals
 

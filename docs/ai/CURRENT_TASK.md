@@ -1,78 +1,80 @@
-# Current Task: Containerized API and Service Authentication
+# Current Task: C# Client SDK Foundation
 
 ## Milestone
 
-`feat/containerized-api-service-auth` is the first FileSentry `v1.1.0` milestone.
-It makes the existing API/worker deployable as part of one Docker Compose stack and
-adds an additive credential for trusted backend callers without changing `/api/v1`
-or weakening JWT user behavior.
+`feat/client-sdk-foundation` is the second FileSentry `v1.1.0` milestone. It adds a
+reusable .NET 10 client library for the existing `/api/v1/files` service API without
+changing server workflow or authentication behavior.
 
 ## Scope
 
-- Publish the .NET 10 API and background scanner in a production-style multi-stage
-  image that runs as a non-root user.
-- Start the API/worker, PostgreSQL, a one-shot migration command, and ClamAV through
-  one Compose project with persistent temp/quarantine/clean storage.
-- Keep PostgreSQL and ClamAV internal to the Compose network; only the API receives
-  an explicitly configured host binding.
-- Add startup-validated `X-Api-Key` service authentication using constant-time
-  secret comparison and a configured passwordless internal owner identity.
-- Permit service identities to upload, list, read metadata, download clean owned
-  files, and delete owned files. Do not permit service access to registration,
-  login, `/auth/me`, foreign files, or administrative behavior.
-- Preserve Identity/JWT, scanning, ownership, audit/correlation, rate limiting,
-  health endpoints, and all existing tests.
+- Add a packable `src/FileSentry.Client` project to the solution with pre-release
+  NuGet metadata, no publishing credentials, and no unnecessary dependencies.
+- Provide asynchronous `UploadAsync`, `GetFileAsync`, `ListFilesAsync`,
+  `WaitForScanAsync`, `DownloadAsync`, and `DeleteAsync` operations.
+- Attach the configured `X-Api-Key` to each SDK request without mutating shared
+  `HttpClient.DefaultRequestHeaders`.
+- Stream caller-owned upload content and response-owned download content without
+  buffering whole files or exposing server storage details.
+- Model public file metadata/status and preserve bounded ProblemDetails fields in
+  typed exceptions without exposing the configured credential.
+- Poll at configurable intervals with a bounded timeout, stop on every terminal
+  state, and fail safely on unknown or malformed status responses.
+- Add deterministic fake-handler tests plus a PostgreSQL-backed real API/worker
+  integration path that uploads, reaches `Clean`, downloads byte-identically, and
+  deletes through the SDK.
 
 ## Security decisions
 
-- The service credential is supplied only through external configuration and is
-  never returned, persisted, or logged.
-- A service ID is a stable GUID and remains subject to the same database owner
-  predicates and upload rate limiter as a JWT subject.
-- The service owner row has no password and uses a reserved internal identifier;
-  migration/provisioning fails on an identity collision.
-- Requests containing a Bearer header are validated as JWT even if an API-key
-  header is also present, preventing fallback from a bad bearer token.
-- ClamAV continues receiving bytes through `INSTREAM`; storage is never mounted
-  into the scanner container.
+- The server remains authoritative for hashing, file validation, ownership,
+  scanning, and clean-download authorization; the SDK duplicates none of those
+  decisions.
+- `Clean` is the only status a consumer should use to continue to download or
+  process content. `Infected`, `ScanFailed`, and `Deleted` are terminal but never
+  successful; unknown states produce a protocol failure rather than being treated
+  as clean or polled indefinitely.
+- Uploads are never retried automatically, and caller-provided upload streams are
+  not owned or disposed by the SDK.
+- A returned download stream owns its HTTP response and releases it when disposed.
+- API keys, upload bytes, and download bytes are not logged or included in SDK
+  exception text. Any reflected configured key is redacted from parsed error data.
 
 ## Out of scope
 
-C# or Python SDKs, webhooks, quotas, retention, cloud storage, message brokers,
-public sharing, admin UI, and API redesign remain later milestones.
+NuGet publishing, Python SDK, webhooks, automatic upload retries, dependency-
+injection extensions, quotas/retention, cloud storage, UI, API v2, and scanning
+changes remain later milestones.
 
 ## Verification target
 
-Restore, Release build, full tests, formatting, Compose validation, image build,
-full-stack startup/migration/health, JWT and service-authenticated live calls, a
-containerized clean upload/scan, internal-only dependency ports, vulnerability
-audit, and final diff/status inspection must all be executed before completion.
+Restore, zero-warning Release build, full tests, formatting, direct/transitive
+NuGet vulnerability audit, package creation/metadata inspection, final diff check,
+and Git status inspection must pass. The real API integration path must demonstrate
+an SDK upload reaching `Clean` and a byte-identical streamed download.
 
 ## Verified implementation state
 
-- The exact pinned .NET SDK restored and built the solution in Release with zero
-  warnings and zero errors.
-- All 31 unit and 83 integration tests pass. Coverage includes valid/missing/invalid
-  service credentials, Bearer precedence, startup validation, passwordless service
-  provisioning, owner isolation, the service/JWT file lifecycle, and secret-safe
-  responses/logs.
-- Formatting and the direct/transitive NuGet vulnerability audit pass; no known
-  vulnerable packages were reported by the configured sources.
-- Compose configuration and the multi-stage API image build pass. A clean
-  disposable stack applied migrations, provisioned the service owner, reached
-  healthy live/ready status, and ran the API process as UID 1654.
-- Only the API was published, on loopback for verification. PostgreSQL and ClamAV
-  had no host mappings. Fresh application volumes were owned by `app:app` with
-  mode `700`.
-- Live calls verified registration/login/JWT access, valid/missing/invalid service
-  authentication, JWT/service cross-owner `404` behavior, a clean PDF upload from
-  `PendingScan` to `Clean`, byte-identical download, deletion, and JWT-only
-  `/auth/me`.
-- Inspection found no configured signing key, service key, connection string, or
-  untrusted upload filename in API logs or HTTP response data.
+- The public SDK exposes `UploadAsync`, `GetFileAsync`, `ListFilesAsync`,
+  `WaitForScanAsync`, `DownloadAsync`, and `DeleteAsync` with cancellation support.
+- Uploads are multipart streamed without taking ownership of the caller stream;
+  downloads remain unread until consumed and release their HTTP response when the
+  returned stream is disposed.
+- Fourteen deterministic SDK tests cover per-request credentials, streaming,
+  response models, download lifetime, delete, clean/infected/failed polling,
+  cancellation, ProblemDetails mapping/redaction, and malformed/unknown responses.
+- A PostgreSQL-backed API/worker integration test verified SDK upload from
+  `PendingScan` to `Clean`, byte-identical streamed download, and deletion.
+- The exact pinned SDK restored and built all four projects in Release with zero
+  warnings and zero errors. All 45 unit and 84 integration tests pass, and formatting
+  verification succeeds.
+- The direct/transitive NuGet audit reports no known vulnerable packages from the
+  configured sources.
+- `FileSentry.Client.1.1.0-preview.1.nupkg` packs successfully with the SDK README,
+  MIT expression, repository metadata, `net10.0` assembly, and no runtime package
+  dependencies. The disposable package was inspected and removed; nothing was
+  published.
 
-The updated GitHub Actions workflow now also builds the API image. Its hosted run
-on this uncommitted branch is not verifiable locally and remains the only
-environment-specific check.
+The updated hosted CI run remains unverified because this task does not commit or
+push.
 
-Recommended next milestone: `feat/client-sdk-foundation`.
+Recommended next milestone: `feat/sdk-integration-examples`.
