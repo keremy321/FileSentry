@@ -1,4 +1,8 @@
 <Solution>
+  <Folder Name="/examples/">
+    <Project Path="examples/FileSentry.AspNetExample/FileSentry.AspNetExample.csproj" />
+    <Project Path="examples/FileSentry.ConsoleExample/FileSentry.ConsoleExample.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/FileSentry.IntegrationTests/FileSentry.IntegrationTests.csproj" />
     <Project Path="tests/FileSentry.UnitTests/FileSentry.UnitTests.csproj" />

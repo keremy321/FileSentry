@@ -20,6 +20,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\examples\FileSentry.AspNetExample\FileSentry.AspNetExample.csproj" />
+    <ProjectReference Include="..\..\examples\FileSentry.ConsoleExample\FileSentry.ConsoleExample.csproj" />
     <ProjectReference Include="..\..\src\FileSentry.Api\FileSentry.Api.csproj" />
     <ProjectReference Include="..\..\src\FileSentry.Client\FileSentry.Client.csproj" />
   </ItemGroup>

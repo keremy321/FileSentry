@@ -310,6 +310,9 @@ successful. Unknown or malformed states fail safely. Uploads are not retried
 automatically, and API ProblemDetails are available through typed, credential-
 redacted SDK exceptions.
 
+Runnable project-reference examples for a console consumer and a streaming ASP.NET
+Core backend are documented in [examples/README.md](examples/README.md).
+
 ## Audit, correlation, and rate limiting
 
 - Every request receives an `X-Correlation-ID`. A valid caller value is reused;

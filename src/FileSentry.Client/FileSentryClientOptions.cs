@@ -12,7 +12,9 @@ public sealed class FileSentryClientOptions
 
     public TimeSpan ScanTimeout { get; init; } = TimeSpan.FromMinutes(5);
 
-    internal ValidatedFileSentryClientOptions Validate()
+    public void Validate() => _ = ValidateAndNormalize();
+
+    internal ValidatedFileSentryClientOptions ValidateAndNormalize()
     {
         ArgumentNullException.ThrowIfNull(BaseAddress);
 

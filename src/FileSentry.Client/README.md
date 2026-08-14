@@ -40,6 +40,12 @@ Configure an injected client's primary handler with automatic redirects disabled
 so a custom authentication header cannot be forwarded to another origin. The
 options-only constructor does this by default.
 
+`IFileSentryClient` supports dependency injection and focused consumer tests.
+`FileSentryClientOptions.Validate()` enables fail-fast application startup before a
+client is first resolved. See the repository's
+[runnable examples](https://github.com/keremy321/FileSentry/tree/main/examples) for
+console and `HttpClientFactory` integration patterns.
+
 API ProblemDetails responses produce `FileSentryApiException`, with status, stable
 code, title, detail, type, and instance where available. Polling timeout and invalid
 wire responses use dedicated exception types.

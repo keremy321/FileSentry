@@ -6,7 +6,7 @@ using FileSentry.Client.Internal;
 
 namespace FileSentry.Client;
 
-public sealed class FileSentryClient : IDisposable
+public sealed class FileSentryClient : IFileSentryClient, IDisposable
 {
     private const string ApiKeyHeaderName = "X-Api-Key";
     private const int MaximumProblemDetailsBytes = 64 * 1024;
@@ -45,7 +45,7 @@ public sealed class FileSentryClient : IDisposable
     {
         ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(options);
-        ValidatedFileSentryClientOptions validatedOptions = options.Validate();
+        ValidatedFileSentryClientOptions validatedOptions = options.ValidateAndNormalize();
         _httpClient = httpClient;
         _ownsHttpClient = ownsHttpClient;
         _baseAddress = validatedOptions.BaseAddress;

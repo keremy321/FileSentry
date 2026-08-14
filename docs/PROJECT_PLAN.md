@@ -155,12 +155,12 @@ grows.
 4. Owner-authorized metadata, download, and delete operations.
 5. Audit, correlation, rate limiting, operational hardening, and CI.
 
-### Current v1.1 phase: C# client SDK foundation
+### Current v1.1 phase: SDK integration examples
 
-- provide a pack-ready .NET 10 client for service-authenticated upload, metadata,
-  list, scan polling, clean download, and delete;
-- stream file content and preserve typed ProblemDetails without exposing the key;
-- stop polling safely on clean and non-clean terminal states;
+- demonstrate the local SDK through focused console and ASP.NET Core consumers;
+- stream local and inbound multipart content without local parsing or persistence;
+- use fail-fast external configuration and `HttpClientFactory` correctly;
+- prove non-clean statuses never trigger download or content processing;
 - keep NuGet publishing, Python SDK, webhooks, quotas, retention, cloud storage,
   and messaging in later milestones.
 

@@ -1,80 +1,74 @@
-# Current Task: C# Client SDK Foundation
+# Current Task: SDK Integration Examples
 
 ## Milestone
 
-`feat/client-sdk-foundation` is the second FileSentry `v1.1.0` milestone. It adds a
-reusable .NET 10 client library for the existing `/api/v1/files` service API without
-changing server workflow or authentication behavior.
+`feat/sdk-integration-examples` is the third FileSentry `v1.1.0` milestone. It
+demonstrates that `FileSentry.Client` can be integrated safely into a command-line
+tool and an ASP.NET Core backend without a published package or changes to
+`/api/v1`.
 
 ## Scope
 
-- Add a packable `src/FileSentry.Client` project to the solution with pre-release
-  NuGet metadata, no publishing credentials, and no unnecessary dependencies.
-- Provide asynchronous `UploadAsync`, `GetFileAsync`, `ListFilesAsync`,
-  `WaitForScanAsync`, `DownloadAsync`, and `DeleteAsync` operations.
-- Attach the configured `X-Api-Key` to each SDK request without mutating shared
-  `HttpClient.DefaultRequestHeaders`.
-- Stream caller-owned upload content and response-owned download content without
-  buffering whole files or exposing server storage details.
-- Model public file metadata/status and preserve bounded ProblemDetails fields in
-  typed exceptions without exposing the configured credential.
-- Poll at configurable intervals with a bounded timeout, stop on every terminal
-  state, and fail safely on unknown or malformed status responses.
-- Add deterministic fake-handler tests plus a PostgreSQL-backed real API/worker
-  integration path that uploads, reaches `Clean`, downloads byte-identically, and
-  deletes through the SDK.
+- Add project-reference-based console and minimal ASP.NET Core examples under
+  `examples/` and include them in the solution.
+- Read `FILESENTRY_BASE_URL` and `FILESENTRY_SERVICE_API_KEY` from external
+  configuration with clear fail-fast validation.
+- Demonstrate the required `Upload -> Wait -> Clean -> Download/process` sequence.
+- Stream local console input, inbound ASP.NET multipart content, and clean download
+  content without printing, parsing, or locally persisting untrusted bytes.
+- Handle infected, failed, timeout, cancellation, protocol, transport, and API
+  failures without exposing credentials or response content.
+- Add only evidence-backed, backward-compatible SDK ergonomics: a public client
+  interface for DI/testability and a public options-validation method for startup
+  validation.
+- Add lightweight tests for configuration failures and the invariant that the
+  ASP.NET forwarding service never downloads a non-clean result.
 
 ## Security decisions
 
-- The server remains authoritative for hashing, file validation, ownership,
-  scanning, and clean-download authorization; the SDK duplicates none of those
-  decisions.
-- `Clean` is the only status a consumer should use to continue to download or
-  process content. `Infected`, `ScanFailed`, and `Deleted` are terminal but never
-  successful; unknown states produce a protocol failure rather than being treated
-  as clean or polled indefinitely.
-- Uploads are never retried automatically, and caller-provided upload streams are
-  not owned or disposed by the SDK.
-- A returned download stream owns its HTTP response and releases it when disposed.
-- API keys, upload bytes, and download bytes are not logged or included in SDK
-  exception text. Any reflected configured key is redacted from parsed error data.
+- Both examples treat all submitted content as untrusted and perform no local file
+  parsing. The ASP.NET example forwards the first multipart file section directly
+  from the request stream rather than using buffered form model binding.
+- Only exact `Clean` metadata permits `DownloadAsync`. `Infected`, `ScanFailed`,
+  `Deleted`, timeout, cancellation, and unknown/protocol states stop processing.
+- Examples never print or log the API key or file bytes. Expected failures return
+  controlled messages/ProblemDetails rather than upstream exception detail.
+- `HttpClientFactory` owns the ASP.NET client's HTTP lifetime, attaches credentials
+  only through the SDK, and disables automatic redirects on its primary handler.
+- The examples reference the local SDK project. No package is published or consumed
+  from NuGet.
 
 ## Out of scope
 
-NuGet publishing, Python SDK, webhooks, automatic upload retries, dependency-
-injection extensions, quotas/retention, cloud storage, UI, API v2, and scanning
-changes remain later milestones.
+NuGet publishing, Python SDK, Google Drive, CV parsing or AI, webhooks, quotas,
+retention, new scanner behavior, UI frameworks, and API v2 remain later work.
 
 ## Verification target
 
 Restore, zero-warning Release build, full tests, formatting, direct/transitive
-NuGet vulnerability audit, package creation/metadata inspection, final diff check,
-and Git status inspection must pass. The real API integration path must demonstrate
-an SDK upload reaching `Clean` and a byte-identical streamed download.
+NuGet audit, and final diff/status inspection must pass. A disposable full Compose
+stack must verify the console clean flow, ASP.NET clean forwarding, invalid service
+credential handling, and an actual non-clean/infected response without exposing
+secrets.
 
 ## Verified implementation state
 
-- The public SDK exposes `UploadAsync`, `GetFileAsync`, `ListFilesAsync`,
-  `WaitForScanAsync`, `DownloadAsync`, and `DeleteAsync` with cancellation support.
-- Uploads are multipart streamed without taking ownership of the caller stream;
-  downloads remain unread until consumed and release their HTTP response when the
-  returned stream is disposed.
-- Fourteen deterministic SDK tests cover per-request credentials, streaming,
-  response models, download lifetime, delete, clean/infected/failed polling,
-  cancellation, ProblemDetails mapping/redaction, and malformed/unknown responses.
-- A PostgreSQL-backed API/worker integration test verified SDK upload from
-  `PendingScan` to `Clean`, byte-identical streamed download, and deletion.
-- The exact pinned SDK restored and built all four projects in Release with zero
-  warnings and zero errors. All 45 unit and 84 integration tests pass, and formatting
-  verification succeeds.
-- The direct/transitive NuGet audit reports no known vulnerable packages from the
-  configured sources.
-- `FileSentry.Client.1.1.0-preview.1.nupkg` packs successfully with the SDK README,
-  MIT expression, repository metadata, `net10.0` assembly, and no runtime package
-  dependencies. The disposable package was inspected and removed; nothing was
-  published.
+- Both project-reference examples build in the solution. The console streams a
+  local file through upload, polling, and clean-only download; the ASP.NET example
+  streams an inbound multipart section through an injected client and returns bytes
+  only after exact `Clean`.
+- Six focused example tests verify clear configuration failures, credential
+  redaction, clean download, and that `Infected`, `ScanFailed`, and `Deleted` never
+  trigger download. All 51 unit and 84 integration tests pass.
+- A disposable all-container stack reached healthy API, PostgreSQL, and ClamAV
+  states. The console completed a real clean scan/download and rejected an invalid
+  key with a controlled 401 message. The ASP.NET example returned byte-identical
+  clean content and rejected a runtime-assembled EICAR PDF stream with controlled
+  422 ProblemDetails and no content or credential exposure.
+- The pinned .NET 10 SDK restored all projects and produced a zero-warning Release
+  build. Formatting and `git diff --check` pass, and the direct/transitive NuGet
+  audit reports no known vulnerable packages from the configured sources.
+- No package was published and no server API, authentication, persistence, or
+  scanner behavior changed. Hosted CI for these uncommitted changes is unverified.
 
-The updated hosted CI run remains unverified because this task does not commit or
-push.
-
-Recommended next milestone: `feat/sdk-integration-examples`.
+Recommended next milestone: `chore/client-sdk-release`.
