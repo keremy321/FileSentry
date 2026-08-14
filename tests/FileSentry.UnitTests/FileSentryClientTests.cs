@@ -123,6 +123,21 @@ public sealed class FileSentryClientTests
     }
 
     [Fact]
+    public async Task Dispose_WithInjectedHttpClient_DoesNotDisposeCallerOwnedClient()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => Task.FromResult(
+            new HttpResponseMessage(HttpStatusCode.OK)));
+        using HttpClient httpClient = new(handler);
+        var client = CreateClient(httpClient);
+
+        client.Dispose();
+        using HttpResponseMessage response = await httpClient.GetAsync(
+            "https://filesentry.test/health/live");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
     public async Task WaitForScanAsync_PollsActiveStatesUntilClean()
     {
         var statuses = new Queue<FileStatus>(
@@ -193,6 +208,28 @@ public sealed class FileSentryClientTests
         await cancellationSource.CancelAsync();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => wait);
+    }
+
+    [Fact]
+    public async Task WaitForScanAsync_ConfiguredTimeoutThrowsTypedException()
+    {
+        var handler = new StubHttpMessageHandler(async (_, cancellationToken) =>
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            throw new InvalidOperationException("The timeout did not cancel the request.");
+        });
+        using HttpClient httpClient = new(handler);
+        using var client = CreateClient(
+            httpClient,
+            pollingInterval: TimeSpan.FromMilliseconds(10),
+            scanTimeout: TimeSpan.FromMilliseconds(50));
+
+        FileSentryPollingTimeoutException exception =
+            await Assert.ThrowsAsync<FileSentryPollingTimeoutException>(
+                () => client.WaitForScanAsync(FileId));
+
+        Assert.Equal(FileId, exception.FileId);
+        Assert.Equal(TimeSpan.FromMilliseconds(50), exception.Timeout);
     }
 
     [Fact]

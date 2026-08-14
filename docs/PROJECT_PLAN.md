@@ -155,14 +155,15 @@ grows.
 4. Owner-authorized metadata, download, and delete operations.
 5. Audit, correlation, rate limiting, operational hardening, and CI.
 
-### Current v1.1 phase: SDK integration examples
+### Current v1.1 phase: C# client SDK release preparation
 
-- demonstrate the local SDK through focused console and ASP.NET Core consumers;
-- stream local and inbound multipart content without local parsing or persistence;
-- use fail-fast external configuration and `HttpClientFactory` correctly;
-- prove non-clean statuses never trigger download or content processing;
-- keep NuGet publishing, Python SDK, webhooks, quotas, retention, cloud storage,
-  and messaging in later milestones.
+- review the complete exported API before its first public compatibility boundary;
+- keep the first release at `1.1.0-preview.1` while external feedback is pending;
+- ship a complete package README, XML API documentation, portable symbols, and
+  Source Link metadata without runtime dependencies;
+- validate package contents and CI packing without publication credentials;
+- keep actual NuGet publication, stable `1.1.0`, other SDKs, webhooks, quotas,
+  retention, cloud storage, and messaging in later milestones.
 
 Local verification results and release blockers are recorded in
 `docs/ai/CURRENT_TASK.md`. No tag or release is created by this milestone.

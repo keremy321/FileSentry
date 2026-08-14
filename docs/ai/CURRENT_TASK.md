@@ -1,74 +1,70 @@
-# Current Task: SDK Integration Examples
+# Current Task: C# Client SDK Release Preparation
 
 ## Milestone
 
-`feat/sdk-integration-examples` is the third FileSentry `v1.1.0` milestone. It
-demonstrates that `FileSentry.Client` can be integrated safely into a command-line
-tool and an ASP.NET Core backend without a published package or changes to
-`/api/v1`.
+`chore/client-sdk-release` prepares `FileSentry.Client` for its first public NuGet
+preview without publishing, tagging, or changing the server API.
 
 ## Scope
 
-- Add project-reference-based console and minimal ASP.NET Core examples under
-  `examples/` and include them in the solution.
-- Read `FILESENTRY_BASE_URL` and `FILESENTRY_SERVICE_API_KEY` from external
-  configuration with clear fail-fast validation.
-- Demonstrate the required `Upload -> Wait -> Clean -> Download/process` sequence.
-- Stream local console input, inbound ASP.NET multipart content, and clean download
-  content without printing, parsing, or locally persisting untrusted bytes.
-- Handle infected, failed, timeout, cancellation, protocol, transport, and API
-  failures without exposing credentials or response content.
-- Add only evidence-backed, backward-compatible SDK ergonomics: a public client
-  interface for DI/testability and a public options-validation method for startup
-  validation.
-- Add lightweight tests for configuration failures and the invariant that the
-  ASP.NET forwarding service never downloads a non-clean result.
+- Review every exported SDK type for naming, nullability, compatibility, and
+  stream/HTTP ownership clarity using the console and ASP.NET examples as evidence.
+- Keep the first package version at `1.1.0-preview.1` while the public API receives
+  its first external feedback.
+- Finalize NuGet metadata, package README, XML API documentation, portable symbols,
+  and Source Link metadata without adding runtime dependencies.
+- Ensure CI restores, builds, tests, formats, audits, and packs the SDK without any
+  publishing credential.
+- Build and inspect real `.nupkg` and `.snupkg` artifacts, then remove them.
 
-## Security decisions
+## Compatibility and security decisions
 
-- Both examples treat all submitted content as untrusted and perform no local file
-  parsing. The ASP.NET example forwards the first multipart file section directly
-  from the request stream rather than using buffered form model binding.
-- Only exact `Clean` metadata permits `DownloadAsync`. `Infected`, `ScanFailed`,
-  `Deleted`, timeout, cancellation, and unknown/protocol states stop processing.
-- Examples never print or log the API key or file bytes. Expected failures return
-  controlled messages/ProblemDetails rather than upstream exception detail.
-- `HttpClientFactory` owns the ASP.NET client's HTTP lifetime, attaches credentials
-  only through the SDK, and disables automatic redirects on its primary handler.
-- The examples reference the local SDK project. No package is published or consumed
-  from NuGet.
+- Preserve the existing API and `/api/v1` wire contract. No breaking member rename,
+  signature change, or server behavior is justified by the working examples.
+- Caller-provided upload streams and injected `HttpClient` instances remain owned
+  by the caller. A downloaded stream owns its HTTP response and must be disposed.
+- Only exact `Clean` permits content use. Unknown statuses remain protocol errors,
+  and `Clean` reduces risk without guaranteeing harmless content.
+- API keys remain external configuration, per-request headers, and redacted from
+  parsed API errors. No credential or publishing automation is added.
 
 ## Out of scope
 
-NuGet publishing, Python SDK, Google Drive, CV parsing or AI, webhooks, quotas,
-retention, new scanner behavior, UI frameworks, and API v2 remain later work.
+NuGet publication, publishing credentials, tags/releases, stable `1.1.0`, Python or
+other SDKs, new server endpoints, webhooks, integrations, AI features, and API v2
+remain later work.
 
 ## Verification target
 
-Restore, zero-warning Release build, full tests, formatting, direct/transitive
-NuGet audit, and final diff/status inspection must pass. A disposable full Compose
-stack must verify the console clean flow, ASP.NET clean forwarding, invalid service
-credential handling, and an actual non-clean/infected response without exposing
-secrets.
+Restore, zero-warning Release build, all tests, formatting, direct/transitive NuGet
+audit, package creation, archive/metadata/source-symbol inspection, `git diff
+--check`, and final status inspection must pass. Generated package artifacts must
+be removed after inspection.
 
 ## Verified implementation state
 
-- Both project-reference examples build in the solution. The console streams a
-  local file through upload, polling, and clean-only download; the ASP.NET example
-  streams an inbound multipart section through an injected client and returns bytes
-  only after exact `Clean`.
-- Six focused example tests verify clear configuration failures, credential
-  redaction, clean download, and that `Infected`, `ScanFailed`, and `Deleted` never
-  trigger download. All 51 unit and 84 integration tests pass.
-- A disposable all-container stack reached healthy API, PostgreSQL, and ClamAV
-  states. The console completed a real clean scan/download and rejected an invalid
-  key with a controlled 401 message. The ASP.NET example returned byte-identical
-  clean content and rejected a runtime-assembled EICAR PDF stream with controlled
-  422 ProblemDetails and no content or credential exposure.
-- The pinned .NET 10 SDK restored all projects and produced a zero-warning Release
-  build. Formatting and `git diff --check` pass, and the direct/transitive NuGet
-  audit reports no known vulnerable packages from the configured sources.
-- No package was published and no server API, authentication, persistence, or
-  scanner behavior changed. Hosted CI for these uncommitted changes is unverified.
+- The exported interface, concrete client, options, records, enum, exception
+  hierarchy, and stream ownership were reviewed against both runnable examples.
+  No method or wire-contract break was justified. The abstract base exception's
+  accidental public constructor was narrowed to conventional `protected` access;
+  external derived exceptions remain supported.
+- `1.1.0-preview.1` remains the recommended first public version because the API
+  has strong local/integration evidence but no public-consumer feedback yet.
+- Package metadata now includes title, description, authors, MIT expression,
+  project/repository URLs and commit, tags, release notes, README, XML API docs,
+  portable symbols, and Source Link. There are no package dependencies.
+- Final package inspection found seven intended `.nupkg` entries and five intended
+  `.snupkg` entries: client DLL/XML docs/README plus package metadata, and the
+  portable PDB plus symbol metadata. No server, example, test, configuration,
+  secret, or build-junk entry was present; the README matched its source and the
+  PDB contained the expected GitHub Source Link mapping.
+- The pinned SDK restored and produced a zero-warning Release build. All 53 unit
+  and 84 integration tests pass, formatting succeeds, and the configured NuGet
+  sources report no known vulnerable direct or transitive packages.
+- CI already builds/tests the full solution and packs the client without a
+  publishing credential. The two inspected local package artifacts were removed;
+  nothing was published, tagged, or released. Hosted CI for these uncommitted
+  changes remains unverified.
 
-Recommended next milestone: `chore/client-sdk-release`.
+Recommended next step: publish `1.1.0-preview.1` only after review, hosted CI, and
+explicit NuGet publication authorization.

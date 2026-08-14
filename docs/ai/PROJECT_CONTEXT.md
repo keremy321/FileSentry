@@ -206,11 +206,12 @@ configured stable passwordless service owner before starting the API.
 
 ## Current verified state
 
-The v1.0 MVP plus the first three v1.1 milestones implement infrastructure health,
+The v1.0 MVP plus the first four v1.1 milestones implement infrastructure health,
 Identity/JWT and service authentication, secure ingestion, durable ClamAV scanning
 and recovery, owner-protected file lifecycle, auditing/correlation/rate limiting,
 an all-container Compose topology, a pack-ready .NET client SDK, runnable console
-and ASP.NET integration examples, adversarial tests, and GitHub Actions CI.
+and ASP.NET integration examples, release-ready preview package metadata and docs,
+adversarial tests, and GitHub Actions CI.
 
 Integration tests use disposable PostgreSQL 17 and real ClamAV Testcontainers. The
 final v1.0 local gate passed from an isolated clone with a zero-warning Release
@@ -232,11 +233,14 @@ a hosted runner because this task does not commit or push.
 The SDK is versioned `1.1.0-preview.1` and intentionally remains unpublished. Its
 safe consumer workflow is upload, wait for a terminal scan status, continue only on
 `Clean`, then stream the download. A clean result reduces risk but is not a safety
-guarantee.
+guarantee. The release-preparation gate verified the package README and metadata,
+XML public API documentation, dependency-free client assembly, portable symbol
+package, and GitHub Source Link mapping; inspected artifacts were removed.
 
 The SDK exposes an additive `IFileSentryClient` contract for DI/testability and
 public options validation for fail-fast configuration. No existing method or wire
-contract changed.
+contract changed. Caller-owned upload streams and injected HTTP clients remain
+caller-owned, while downloaded streams own and release their HTTP responses.
 
 ## Limitations and explicit non-goals
 
