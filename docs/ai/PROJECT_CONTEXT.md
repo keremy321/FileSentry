@@ -45,6 +45,9 @@ FileSentry/
 |   |-- demo.md
 |   |-- PROJECT_PLAN.md
 |   `-- threat-model.md
+|-- examples/
+|   |-- FileSentry.AspNetExample/
+|   `-- FileSentry.ConsoleExample/
 |-- src/FileSentry.Api/
 |-- src/FileSentry.Client/
 |-- tests/
@@ -76,6 +79,15 @@ the service key to individual requests rather than shared default headers. It
 returns typed file/status models and bounded, credential-redacted ProblemDetails
 exceptions. The server remains authoritative for format validation, hashing,
 ownership, scanning, and download permission.
+
+### Integration examples
+
+The console example streams a local file through upload, terminal-state polling,
+and clean-only download without displaying content. The minimal ASP.NET Core
+example uses `HttpClientFactory`, forwards an inbound multipart file section
+without form buffering or local persistence, and returns content only after exact
+`Clean`. Both load base URL and service key from external configuration and return
+controlled failures for non-clean or upstream-error paths.
 
 ### PostgreSQL
 
@@ -194,11 +206,11 @@ configured stable passwordless service owner before starting the API.
 
 ## Current verified state
 
-The v1.0 MVP plus the first two v1.1 milestones implement infrastructure health,
+The v1.0 MVP plus the first three v1.1 milestones implement infrastructure health,
 Identity/JWT and service authentication, secure ingestion, durable ClamAV scanning
 and recovery, owner-protected file lifecycle, auditing/correlation/rate limiting,
-an all-container Compose topology, a pack-ready .NET client SDK, adversarial tests,
-and GitHub Actions CI.
+an all-container Compose topology, a pack-ready .NET client SDK, runnable console
+and ASP.NET integration examples, adversarial tests, and GitHub Actions CI.
 
 Integration tests use disposable PostgreSQL 17 and real ClamAV Testcontainers. The
 final v1.0 local gate passed from an isolated clone with a zero-warning Release
@@ -221,6 +233,10 @@ The SDK is versioned `1.1.0-preview.1` and intentionally remains unpublished. It
 safe consumer workflow is upload, wait for a terminal scan status, continue only on
 `Clean`, then stream the download. A clean result reduces risk but is not a safety
 guarantee.
+
+The SDK exposes an additive `IFileSentryClient` contract for DI/testability and
+public options validation for fail-fast configuration. No existing method or wire
+contract changed.
 
 ## Limitations and explicit non-goals
 
