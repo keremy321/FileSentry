@@ -4,7 +4,8 @@ FileSentry is a secure file-ingestion and malware-scanning API built with ASP.NE
 Core, PostgreSQL, ClamAV, and Docker.
 
 **Status:** MVP behavior, security hardening, automated tests, and GitHub Actions CI
-are implemented. Release documentation hardening is in progress.
+are implemented. Final local verification is complete; release blockers are recorded
+in `docs/ai/CURRENT_TASK.md`.
 
 **Architecture:** .NET 10 modular monolith with a database-backed scanner worker.
 
@@ -150,14 +151,7 @@ grows.
 4. Owner-authorized metadata, download, and delete operations.
 5. Audit, correlation, rate limiting, operational hardening, and CI.
 
-### Current phase: documentation hardening
-
-- provide accurate clean-clone setup and API examples;
-- reconcile planned wording with implemented behavior;
-- document architecture, threats, demonstration steps, and residual risk;
-- verify license, ignore rules, placeholder configuration, and local reproducibility.
-
-### Final phase: final verification
+### Current phase: final verification
 
 - repeat the full release checklist from a clean worktree/clone;
 - verify migrations and the documented manual API flow;
@@ -165,7 +159,8 @@ grows.
 - confirm the default-branch hosted CI result and record remaining limitations;
 - decide separately whether to tag or publish a release.
 
-No tag or release is created by the documentation milestone.
+Local verification results and release blockers are recorded in
+`docs/ai/CURRENT_TASK.md`. No tag or release is created by this milestone.
 
 ## Release acceptance criteria
 
@@ -174,12 +169,33 @@ No tag or release is created by the documentation milestone.
 - [x] Clean and infected content follows the correct storage lifecycle.
 - [x] Metadata, download, and delete enforce owner predicates.
 - [x] Audit, correlation, and focused rate limits are implemented.
-- [x] Unit and integration tests run in secret-free GitHub Actions CI.
+- [ ] The current default-branch GitHub Actions run is independently observed green;
+  the secret-free workflow is present and the complete suite passes locally.
 - [x] Storage, `.env`, User Secrets, build output, and malware samples are excluded
   from source control.
 - [x] MIT license is present.
-- [ ] Clean-clone documentation and final release verification are complete.
+- [x] Clean-clone documentation and local final release verification are complete.
 - [ ] Any optional tag or GitHub release is explicitly approved and created later.
+
+## Definition of Done
+
+These requirements are retained for final verification; an item is not complete
+merely because an implementation or document claims it is.
+
+- [ ] Core acceptance criteria pass.
+- [ ] Release build succeeds without warnings selected as errors.
+- [ ] Unit and integration test results are recorded.
+- [ ] GitHub Actions is green on the default branch.
+- [ ] Docker images run as non-root where feasible.
+- [ ] ClamAV is internal-only.
+- [ ] Database migrations are reproducible.
+- [ ] `.env.example` and configuration documentation are complete.
+- [ ] Threat model reflects the implemented behavior.
+- [ ] README includes architecture, setup, API examples, security controls, and
+  limitations.
+- [ ] Repository has a license, description, and relevant GitHub topics.
+- [ ] Demo video is linked.
+- [ ] Tagged release is created.
 
 ## Limitations
 
