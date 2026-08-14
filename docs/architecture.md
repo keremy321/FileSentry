@@ -9,25 +9,31 @@ content over TCP.
 
 ```mermaid
 flowchart LR
-    Client[Authenticated client] --> API[ASP.NET Core API]
-    API --> DB[(PostgreSQL 17)]
-    API --> Temp[(Temporary storage)]
-    API --> Quarantine[(Quarantine storage)]
-    Worker[Scanner BackgroundService] --> DB
-    Worker --> Quarantine
-    Worker --> ClamAV[ClamAV clamd]
-    Worker --> Clean[(Clean storage)]
-    API --> Clean
+    Client[JWT user or API-key service] --> API
+    subgraph Compose[Private Compose network]
+        API[ASP.NET Core API + scanner BackgroundService]
+        Migrate[One-shot migration service]
+        DB[(PostgreSQL 17)]
+        Storage[(Persistent temp / quarantine / clean volumes)]
+        ClamAV[ClamAV clamd]
+        API --> DB
+        API --> Storage
+        API -->|INSTREAM bytes| ClamAV
+        Migrate --> DB
+    end
 ```
 
-The worker is drawn separately to show its responsibility, but it runs in the same
-deployable application as the API.
+The worker runs in the same non-root deployable image and process as the API. The
+migration service uses that image with a finite `--migrate` command before API
+startup. Only the API port is published; PostgreSQL and ClamAV stay internal.
 
 ## Component responsibilities
 
 ### HTTP API
 
 - registers users and issues short-lived JWT access tokens;
+- authenticates one externally configured service identity for owner-scoped file
+  operations without granting authentication-management or administrative access;
 - streams a single authenticated multipart upload while enforcing the actual
   10 MiB limit and calculating SHA-256;
 - verifies allowed extensions against server-detected PDF, PNG, JPEG, or valid Word
@@ -70,8 +76,8 @@ display/download metadata. Storage is not exposed by static-file middleware.
 ### ClamAV
 
 Readiness uses `PING`; scans use `INSTREAM`. The application sends file bytes rather
-than filesystem paths. In the current host-development topology, Compose binds port
-3310 to loopback only because the API is outside Docker.
+than filesystem paths, and the scanner has no access to FileSentry storage. Compose
+does not publish the unencrypted/unauthenticated ClamAV TCP port to the host.
 
 ## Durable state model
 
@@ -97,7 +103,10 @@ never treated as clean.
 
 1. Correlation middleware validates one supplied `X-Correlation-ID` or generates
    one.
-2. Authentication validates issuer, audience, lifetime, signature, and subject.
+2. The authentication selector gives an explicit Bearer header precedence. JWT
+   validates issuer, audience, lifetime, signature, and subject; otherwise an
+   enabled service credential is compared in fixed time and resolved to its
+   passwordless persisted owner identity.
 3. Authorization requires an authenticated caller for file routes.
 4. Focused rate-limit policies partition authentication by IP and uploads by user.
 5. Controllers pass identity and correlation to focused application services.
@@ -106,7 +115,14 @@ never treated as clean.
 
 ## Deployment boundary
 
-Docker Compose currently supplies PostgreSQL and ClamAV only. The API runs on the
-host with secrets supplied through .NET User Secrets or equivalent external
-configuration. This is reproducible local infrastructure, not a production
-deployment topology. See the [README](../README.md) for exact setup.
+Docker Compose builds and runs the API/worker, a one-shot migration process,
+PostgreSQL, ClamAV, and persistent application storage on one private network. The
+API image runs as the .NET base image's non-root application user. Only its HTTP
+port is published, bound to loopback by default; PostgreSQL and ClamAV have no host
+port mapping.
+
+Compose receives database, JWT, and service credentials through external
+configuration and does not bake them into the image. The checked-in `.env.example`
+contains placeholders only; production operators should supply managed secrets,
+TLS termination, backups, monitoring, and host controls. See the
+[README](../README.md) for exact setup.

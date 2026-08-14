@@ -1,15 +1,29 @@
 name: filesentry
 
+x-filesentry-build: &filesentry-build
+  context: ..
+  dockerfile: src/FileSentry.Api/Dockerfile
+
+x-filesentry-environment: &filesentry-environment
+  ASPNETCORE_ENVIRONMENT: Production
+  ASPNETCORE_HTTP_PORTS: 8080
+  ConnectionStrings__PostgreSql: Host=postgresql;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+  Jwt__SigningKey: ${FILESENTRY_JWT_SIGNING_KEY}
+  ServiceAuthentication__Enabled: "true"
+  ServiceAuthentication__ServiceId: ${FILESENTRY_SERVICE_ID}
+  ServiceAuthentication__ServiceName: ${FILESENTRY_SERVICE_NAME:-default-client}
+  ServiceAuthentication__ApiKey: ${FILESENTRY_SERVICE_API_KEY}
+  ClamAV__Host: clamav
+  ClamAV__Port: 3310
+  Storage__RootPath: /var/lib/filesentry
+
 services:
   postgresql:
     image: postgres:17
-    container_name: filesentry-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    ports:
-      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -22,16 +36,49 @@ services:
 
   clamav:
     image: clamav/clamav:1.4_base
-    container_name: filesentry-clamav
     environment:
       CLAMD_STARTUP_TIMEOUT: 180
-    ports:
-      # Temporary while the API runs on the host. Remove this mapping once the API is containerized.
-      - "127.0.0.1:${CLAMAV_PORT:-3310}:3310"
     volumes:
       - clamav-signatures:/var/lib/clamav
+    restart: unless-stopped
+
+  migrate:
+    image: filesentry-api:local
+    build: *filesentry-build
+    command: ["--migrate"]
+    environment: *filesentry-environment
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    volumes:
+      - filesentry-temp:/var/lib/filesentry/temp
+      - filesentry-quarantine:/var/lib/filesentry/quarantine
+      - filesentry-clean:/var/lib/filesentry/clean
+    restart: "no"
+
+  api:
+    image: filesentry-api:local
+    build: *filesentry-build
+    init: true
+    environment: *filesentry-environment
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      clamav:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "${FILESENTRY_API_BIND_ADDRESS:-127.0.0.1}:${FILESENTRY_API_PORT:-8080}:8080"
+    volumes:
+      - filesentry-temp:/var/lib/filesentry/temp
+      - filesentry-quarantine:/var/lib/filesentry/quarantine
+      - filesentry-clean:/var/lib/filesentry/clean
     restart: unless-stopped
 
 volumes:
   postgres-data:
   clamav-signatures:
+  filesentry-temp:
+  filesentry-quarantine:
+  filesentry-clean:

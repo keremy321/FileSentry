@@ -5,6 +5,7 @@ using FileSentry.Api.Contracts.Authentication;
 using FileSentry.Api.Infrastructure.Options;
 using FileSentry.Api.Security;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -101,7 +102,7 @@ public sealed class AuthController(
             : InvalidCredentials();
     }
 
-    [Authorize]
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     [HttpGet("me")]
     public IActionResult GetCurrentUser()
     {

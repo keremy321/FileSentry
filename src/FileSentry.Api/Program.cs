@@ -10,6 +10,7 @@ using FileSentry.Api.Infrastructure.Scanning;
 using FileSentry.Api.Infrastructure.Storage;
 using FileSentry.Api.Persistence;
 using FileSentry.Api.Security;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -38,22 +39,44 @@ builder.Services.AddOpenApi(options =>
             BearerFormat = "JWT",
             Description = "Provide a JWT access token using: Bearer {token}"
         };
+        document.Components.SecuritySchemes["ServiceApiKey"] = new OpenApiSecurityScheme
+        {
+            Type = SecuritySchemeType.ApiKey,
+            Name = ServiceAuthenticationDefaults.HeaderName,
+            In = ParameterLocation.Header,
+            Description = "Provide the externally configured service API key."
+        };
 
         return Task.CompletedTask;
     });
     options.AddOperationTransformer((operation, context, _) =>
     {
-        bool requiresAuthorization = context.Description.ActionDescriptor.EndpointMetadata
+        IAuthorizeData[] authorizationData = context.Description.ActionDescriptor.EndpointMetadata
             .OfType<IAuthorizeData>()
-            .Any();
+            .ToArray();
 
-        if (requiresAuthorization)
+        if (authorizationData.Length > 0)
         {
             operation.Security ??= [];
             operation.Security.Add(new OpenApiSecurityRequirement
             {
                 [new OpenApiSecuritySchemeReference("Bearer", context.Document)] = []
             });
+
+            bool explicitlyJwtOnly = authorizationData.Any(data =>
+                data.AuthenticationSchemes?
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Contains(JwtBearerDefaults.AuthenticationScheme, StringComparer.Ordinal)
+                == true);
+            if (!explicitlyJwtOnly)
+            {
+                operation.Security.Add(new OpenApiSecurityRequirement
+                {
+                    [new OpenApiSecuritySchemeReference(
+                        "ServiceApiKey",
+                        context.Document)] = []
+                });
+            }
         }
 
         return Task.CompletedTask;
@@ -142,6 +165,27 @@ builder.Services
     .ValidateOnStart();
 
 builder.Services
+    .AddOptions<ServiceAuthenticationOptions>()
+    .Bind(builder.Configuration.GetSection(ServiceAuthenticationOptions.SectionName))
+    .Validate(options => !options.Enabled || options.ServiceId != Guid.Empty,
+        $"{ServiceAuthenticationOptions.SectionName}:ServiceId must be a non-empty GUID when service authentication is enabled.")
+    .Validate(options => !options.Enabled
+            || options.ServiceName is { Length: > 0 and <= ServiceAuthenticationOptions.MaximumServiceNameLength }
+            && options.ServiceName.All(character =>
+                char.IsAsciiLetterOrDigit(character)
+                || character is '-' or '_' or '.'),
+        $"{ServiceAuthenticationOptions.SectionName}:ServiceName must contain only ASCII letters, digits, '.', '-' or '_' and be at most 64 characters.")
+    .Validate(options => !options.Enabled
+            || Encoding.UTF8.GetByteCount(options.ApiKey ?? string.Empty)
+                >= ServiceAuthenticationOptions.MinimumApiKeyBytes,
+        $"{ServiceAuthenticationOptions.SectionName}:ApiKey must contain at least 32 bytes when service authentication is enabled.")
+    .Validate(options => !options.Enabled
+            || (options.ApiKey?.Length ?? 0)
+                <= ServiceAuthenticationOptions.MaximumApiKeyLength,
+        $"{ServiceAuthenticationOptions.SectionName}:ApiKey must not exceed 512 characters.")
+    .ValidateOnStart();
+
+builder.Services
     .AddOptions<AuthenticationRateLimitOptions>()
     .Bind(builder.Configuration.GetSection(AuthenticationRateLimitOptions.SectionName))
     .Validate(options => options.PermitLimit is >= 1 and <= 1000,
@@ -167,8 +211,30 @@ builder.Services
     .ValidateOnStart();
 
 builder.Services
-    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer();
+    .AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = FileSentryAuthenticationDefaults.Scheme;
+        options.DefaultChallengeScheme = FileSentryAuthenticationDefaults.Scheme;
+    })
+    .AddPolicyScheme(
+        FileSentryAuthenticationDefaults.Scheme,
+        FileSentryAuthenticationDefaults.Scheme,
+        options => options.ForwardDefaultSelector = context =>
+        {
+            string authorization = context.Request.Headers.Authorization.ToString();
+            if (authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                return JwtBearerDefaults.AuthenticationScheme;
+            }
+
+            return context.Request.Headers.ContainsKey(ServiceAuthenticationDefaults.HeaderName)
+                ? ServiceAuthenticationDefaults.Scheme
+                : JwtBearerDefaults.AuthenticationScheme;
+        })
+    .AddJwtBearer()
+    .AddScheme<AuthenticationSchemeOptions, ServiceApiKeyAuthenticationHandler>(
+        ServiceAuthenticationDefaults.Scheme,
+        _ => { });
 builder.Services
     .AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
     .Configure<IOptions<JwtOptions>>((options, jwtOptionsAccessor) =>
@@ -261,6 +327,8 @@ builder.Services.AddScoped<FileIngestionService>();
 builder.Services.AddScoped<FileAccessService>();
 builder.Services.AddScoped<FileScanWorkflowService>();
 builder.Services.AddScoped<FileScanProcessor>();
+builder.Services.AddScoped<ServiceIdentityProvisioner>();
+builder.Services.AddScoped<DatabaseMigrationRunner>();
 builder.Services.AddHostedService<FileScannerBackgroundService>();
 
 builder.Services
@@ -274,11 +342,20 @@ var app = builder.Build();
 _ = app.Services.GetRequiredService<IOptions<PostgreSqlOptions>>().Value;
 _ = app.Services.GetRequiredService<IOptions<ClamAvOptions>>().Value;
 _ = app.Services.GetRequiredService<IOptions<JwtOptions>>().Value;
+_ = app.Services.GetRequiredService<IOptions<ServiceAuthenticationOptions>>().Value;
 _ = app.Services.GetRequiredService<IOptions<AuthenticationRateLimitOptions>>().Value;
 _ = app.Services.GetRequiredService<IOptions<UploadRateLimitOptions>>().Value;
 _ = app.Services.GetRequiredService<IOptions<StorageOptions>>().Value;
 _ = app.Services.GetRequiredService<IOptions<ScannerWorkerOptions>>().Value;
 _ = app.Services.GetRequiredService<StoragePathProvider>();
+
+if (args.Contains(DatabaseMigrationRunner.CommandArgument, StringComparer.Ordinal))
+{
+    await using AsyncServiceScope scope = app.Services.CreateAsyncScope();
+    var migrationRunner = scope.ServiceProvider.GetRequiredService<DatabaseMigrationRunner>();
+    await migrationRunner.RunAsync(CancellationToken.None);
+    return;
+}
 
 if (app.Environment.IsDevelopment())
 {

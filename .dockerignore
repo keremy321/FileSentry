@@ -1,0 +1,14 @@
+.git
+.github
+.vs
+.vscode
+**/bin
+**/obj
+**/TestResults
+artifacts
+data
+deploy/.env
+secrets.json
+*.user
+*.suo
+*.log
